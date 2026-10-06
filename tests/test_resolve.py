@@ -141,16 +141,16 @@ class RegistryIsNeverStoredState(WorldCase):
         self.assertEqual(d["registry"], str(self.w.registry.resolve()))
 
     def test_nothing_but_status_reads_the_last_used_hint(self):
-        # Regression: the stale hint made the guard scope every session to a /tmp project.
+        # Regression: the stale hint made every session record into a /tmp project.
         self.w.use()
         (self.w.home / "active.json").write_text(json.dumps(
             {"client": "acme", "project": "P1", "project_dir": "/private/tmp/x/P1 - Test"}))
-        for cmd in (("context",), ("guard",), ("rendered",), ("stage", "auto", "prompt")):
+        for cmd in (("context",), ("observe",), ("rendered",), ("stage", "auto", "prompt")):
             code, d = self.w.run(*cmd, cwd=self.w.tmp, stdin="{}")
             self.assertNotEqual(d.get("project"), "P1", cmd)
-        _, g = self.w.run("guard", cwd=self.w.tmp,
+        _, g = self.w.run("observe", cwd=self.w.tmp,
                           stdin=json.dumps({"tool": "Read", "input": {"file_path": "/Volumes/Other/x"}, "cwd": str(self.w.tmp)}))
-        self.assertEqual(g["decision"], "allow")  # no project resolved: no scope, whatever the hint says
+        self.assertFalse(g["observed"])  # no project resolved: nothing recorded, whatever the hint says
 
 
 class RefuseTemporaryProjects(WorldCase):

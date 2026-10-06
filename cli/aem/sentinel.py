@@ -122,6 +122,10 @@ def rendered(ctx: Context, command: str, cwd: str | None, started_at: float | No
         return {"render": bool(pattern), "pattern": pattern, "outputs": [], "passed": 0, "failed": 0, "text": ""}
     base = Path(cwd).resolve() if cwd else (ctx.project_dir or Path.cwd())
     paths, hows = find_outputs(ctx, command, base, started_at, cfg)
+    inferred = None
+    if paths:  # a render changed: with no stage open, AEM opens the render gate itself (flagged as inferred)
+        from . import ledger, observe
+        inferred = observe.infer_stage(ctx, ledger.read_events(ctx), paths[-1], source="aem rendered", render=True)
     skipped = []
     if len(paths) > cfg["max_outputs"]:
         skipped = [str(p) for p in paths[:-cfg["max_outputs"]]]
@@ -144,8 +148,10 @@ def rendered(ctx: Context, command: str, cwd: str | None, started_at: float | No
     failed = len(outputs) - passed
     stale = approvals.summary(ctx)["stale"]
     out = {"render": True, "pattern": pattern, "exit_code": exit_code, "outputs": outputs, "passed": passed,
-           "failed": failed, "stale": stale, "skipped": skipped}
+           "failed": failed, "stale": stale, "skipped": skipped, "inferred": inferred}
     out["toast"], out["text"] = _texts(out)
+    if inferred:
+        out["toast"] += f" · {inferred['gate']} inferred (no stage was open)"
     return out
 
 

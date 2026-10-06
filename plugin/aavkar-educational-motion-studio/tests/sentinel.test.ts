@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { INACTIVE, NOW, PARTS, START, active, floor } from './fake-aem'
 import type { Reply, Router } from './fake-aem'
 
-const ALLOW: Reply = { json: { ok: true, decision: 'allow' } }
+const OBSERVED: Reply = { json: { ok: true, observed: true, delivery: null } }
 
 // aem rendered as the CLI answers it: hyperframes renders are renders; one failed with a flash.
 function renderedReply(stdin: string | undefined): Reply {
@@ -16,7 +16,7 @@ function renderedReply(stdin: string | undefined): Reply {
 }
 
 const withRendered = (base: Router): Router => (args, stdin) =>
-  args[0] === 'guard' ? ALLOW : args[0] === 'rendered' ? renderedReply(stdin) : base(args, stdin)
+  args[0] === 'observe' ? OBSERVED : args[0] === 'rendered' ? renderedReply(stdin) : base(args, stdin)
 
 const renderedCalls = (calls: string[][]) => calls.filter(c => c[1] === 'rendered')
 
@@ -50,7 +50,7 @@ describe('render sentinel', () => {
 
   test('other tools are not watched; Bash is, and the CLI says when no project is active', async ($, on) => {
     const none: Reply = { json: { ok: true, render: false, outputs: [], text: '', note: 'no active project' } }
-    const w = floor(on, (args, stdin) => (args[0] === 'guard' ? ALLOW : args[0] === 'rendered' ? none : INACTIVE(args, stdin)))
+    const w = floor(on, (args, stdin) => (args[0] === 'observe' ? OBSERVED : args[0] === 'rendered' ? none : INACTIVE(args, stdin)))
     await $.session.start(START)
     const toasts = w.toasts.length
     await $.tool.call({ tool: 'Read', file_path: '/projects/P1/renders/a.mp4' })
@@ -71,11 +71,14 @@ describe('render sentinel', () => {
     expect(JSON.stringify('context' in r ? r.context : [])).toContain('aem check-render <path>')
   })
 
-  test('a denied call is never watched', async ($, on) => {
-    const deny: Reply = { code: 1, json: { ok: true, decision: 'deny', rule: 'AEM-G03', rule_name: 'blocked command', reason: 'x', how: 'y' } }
-    const w = floor(on, (args, stdin) => (args[0] === 'guard' ? deny : withRendered(active())(args, stdin)))
+  test('a call the operator stopped at the delivery confirmation is never watched', async ($, on) => {
+    const delivery = { question: 'a has no approval. Deliver anyway?', unapproved: [{ item: 'a', path: 'renders/a.mp4', state: 'none' }],
+      approve: [['approve', 'a', '/p/renders/a.mp4', '--gate', 'G6', '--delivery-confirmation']], slash: ['/approve a renders/a.mp4 G6'] }
+    const stopAsk: Reply = { json: { ok: true, observed: true, delivery } }
+    const w = floor(on, (args, stdin) => (args[0] === 'observe' && !(stdin ?? '').includes('outcome') ? stopAsk : withRendered(active())(args, stdin)), { answer: 'Stop' })
     await $.session.start(START)
-    await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render .' })
+    await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render . && cp renders/a.mp4 delivery/' })
+    expect(w.toolsRun).toEqual([])
     expect(renderedCalls(w.calls)).toEqual([])
   })
 

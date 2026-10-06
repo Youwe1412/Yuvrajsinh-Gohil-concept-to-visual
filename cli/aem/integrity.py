@@ -1,23 +1,21 @@
-"""Ledger integrity: anything written to a record outside AEM is detected.
+"""Ledger integrity: anything written to a record outside AEM is detected. Detection, not prevention.
 
 AEM's ledgers (events.jsonl, approvals.jsonl, the client's decisions file and critic/labelled-cases.jsonl)
 are written only by `aem` commands. Next to each, in a hidden `.aem-integrity/` folder, AEM keeps a manifest
 of the lines it wrote: one short hash per line, appended in the same locked write. `aem integrity` compares
-the file with what AEM wrote and reports every line that is not AEM's (inserted or hand-written), every AEM
-line that was changed or removed, and whether the guard let the write through on an operator's message
-(`allowed_by_operator_prompt`: the prompt that asked for it is named) or nothing recorded it at all.
+the file with what AEM wrote and reports every line that is not AEM's (inserted or hand-written) and every AEM
+line that was changed or removed, with the agent's tool calls that wrote that file, if AEM observed any
+(`observed` events), so the record says whether it was the agent or someone outside it.
 
-A finding stays until the operator runs `aem accept-edit`, which records the acceptance (who, when, what,
-and the prompt if it was given in chat) as an `edit_accepted` event and re-baselines the manifest.
+A finding stays, and the status line counts it, until the operator runs `aem accept-edit`, which records the
+acceptance (who, when, what) as an `edit_accepted` event and re-baselines the manifest.
 
 The first time AEM writes a file with no manifest, it records the lines already there as the baseline,
 trusted as they stand: AEM cannot know whether an older line was written by hand. Until then `aem integrity`
 says "no baseline yet" rather than guessing.
 
-Limits (cooperative, like the rest of AEM): the manifest sits beside the ledger, so an agent that can write
-one can write the other; the guard protects both from the agent's Write and Edit tools and from shell
-commands that name them, and denies those unless the operator asked in chat. What this adds is that a write
-which bypasses `aem` leaves a visible difference, not that it cannot be made.
+Limits: nothing stops a hand edit (AEM never blocks a write); the manifest sits beside the ledger, so whoever
+rewrites one consistently with the other is not caught; a line identical to one AEM wrote cannot be told apart.
 """
 from __future__ import annotations
 
@@ -160,41 +158,46 @@ def check_file(path: Path) -> dict:
     return {"file": str(path), "name": path.name, "exists": path.exists(), "baseline": True, "findings": findings}
 
 
-def allowed_events(ctx: Context, path: Path) -> list[dict]:
-    """The guard's allowed_by_operator_prompt events whose call named this file: the operator's message let
-    the write through, and said which."""
+def observed_writes(ctx: Context, path: Path, events: list[dict] | None = None) -> list[dict]:
+    """The agent's tool calls AEM observed that wrote this file, or ran a shell command (not a read) naming it."""
+    from .observe import command_reads_only
     if not ctx.project_dir:
         return []
     out = []
-    for ev in ledger.read_events(ctx):
-        if ev.get("event") != "allowed_by_operator_prompt":
+    for ev in events if events is not None else ledger.read_events(ctx):
+        if ev.get("event") != "observed":
             continue
-        subject = str(ev.get("subject") or "")
-        if path.name in subject or str(path) in subject or MANIFEST_DIR in subject:
-            out.append({"ts": ev.get("ts"), "tool": ev.get("tool"), "rule": ev.get("rule"),
-                        "prompt_id": ev.get("prompt_id"), "prompt_excerpt": ev.get("prompt_excerpt")})
+        written = [str(w) for w in ev.get("writes") or []]
+        command = str(ev.get("command") or "")
+        named = " ".join([command] + [str(x) for x in ev.get("paths") or []])
+        if (any(w == path.name or w.endswith("/" + path.name) for w in written)
+                or (ev.get("tool") == "Bash" and (path.name in named or MANIFEST_DIR in named)
+                    and not command_reads_only(command))):
+            out.append({"ts": ev.get("ts"), "tool": ev.get("tool"), "session": ev.get("session"),
+                        "agent": ev.get("agent"), "command": (str(ev.get("command") or "")[:160] or None)})
     return out
 
 
 def check(ctx: Context) -> dict:
     files = []
-    unexplained = explained = 0
+    by_agent = outside = 0
+    events = ledger.read_events(ctx) if ctx.project_dir else []
     for p in tracked_files(ctx):
         r = check_file(p)
         if r["findings"]:
-            cover = allowed_events(ctx, p)
-            r["allowed_by_operator_prompt"] = cover
+            seen = observed_writes(ctx, p, events)
+            r["observed_writes"] = seen
             r["explanation"] = (
-                "the guard let a call naming this file through on the operator's message(s): "
-                + ", ".join(sorted({f"{c['prompt_id']} '{c['prompt_excerpt']}'" for c in cover}))
-                if cover else "outside any recorded operator prompt: nothing logged a call that could have written it")
-            if cover:
-                explained += len(r["findings"])
+                f"the agent wrote it, or ran a command naming it: {len(seen)} observed call(s), the last "
+                f"{seen[-1]['tool']} at {seen[-1]['ts']}" if seen else
+                "no observed tool call wrote it: an edit outside the agent (an editor, a terminal, another tool)")
+            if seen:
+                by_agent += len(r["findings"])
             else:
-                unexplained += len(r["findings"])
+                outside += len(r["findings"])
         files.append(r)
-    n = unexplained + explained
-    return {"ok": n == 0, "findings": n, "unexplained": unexplained, "during_operator_prompt": explained,
+    n = by_agent + outside
+    return {"ok": n == 0, "findings": n, "by_agent": by_agent, "outside_agent": outside,
             "files": files, "no_baseline": [f["name"] for f in files if not f["baseline"]]}
 
 
@@ -204,7 +207,7 @@ def summary(ctx: Context) -> dict:
         r = check(ctx)
     except (OSError, AemError):
         return {"ok": True, "findings": 0, "files": []}
-    return {"ok": r["ok"], "findings": r["findings"], "unexplained": r["unexplained"],
+    return {"ok": r["ok"], "findings": r["findings"], "by_agent": r["by_agent"],
             "files": [f["name"] for f in r["files"] if f["findings"]]}
 
 
@@ -228,9 +231,9 @@ def accept(ctx: Context, names: list[str] | None, reason: str | None) -> dict:
                   "removed_lines": sum(fi["removed_count"] for fi in f["findings"] if fi["kind"] in ("removed", "edited")),
                   "kinds": sorted({fi["kind"] for fi in f["findings"]})}
         ledger.record(ctx, "edit_accepted", note=(reason or "").strip() or None, fill_stage=True,
-                      file=path.name, explained_by=(f.get("allowed_by_operator_prompt") or None),
+                      file=path.name, observed_writes=(f.get("observed_writes") or None),
                       examples=[x["text"] for fi in f["findings"] for x in fi["now"]][:5],
-                      source="aem accept-edit", **detail)
+                      via=operator.via(), source="aem accept-edit", **detail)
         snapshot(path, by="aem accept-edit", accepted=detail)
         accepted.append({"file": path.name, **detail})
     return {"ok": True, "accepted": accepted}

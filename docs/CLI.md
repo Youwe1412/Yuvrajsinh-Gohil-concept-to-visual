@@ -2,15 +2,14 @@
 
 Reference for Aavkar Educational Motion Studio (AEM)'s command-line tool. Every command accepts
 `--json` and then prints exactly one JSON object with an `ok` field. Exit codes: `0` success, `1` a
-check ran and failed (approval missing or stale, render check failed, drift found), `2` a usage or
-input error.
+check ran and failed (approval missing or stale, render check failed, drift found, ledger edits found),
+`2` a usage or input error.
 
-Commands act on the project they run for, which comes from where they run (see [Which
-project](#which-project)); `--client` and `--project` override it. `--registry` picks another
-registry file. Some commands are the operator's alone and refuse to run for anyone else (see
-[Operator-only commands](#operator-only-commands)). Since 0.9.0 "the operator" includes the operator's
-own message in chat: a turn that began with it carries a turn authority, on which the agent may run them
-and the guard never denies (see [Operator authority from chat](#operator-authority-from-chat)).
+AEM observes and records; it never blocks work. Commands act on the project they run for, which comes
+from where they run (see [Which project](#which-project)); `--client` and `--project` override it.
+`--registry` picks another registry file. The commands that write the record are the operator's alone
+and refuse to run for anyone else (see [Operator-only commands](#operator-only-commands)); every other
+command is open, to the agent too.
 
 ## Which project
 
@@ -23,12 +22,12 @@ There is no global "active project". Every `aem` call resolves its project, in t
 3. The **working directory**: the registered project (the registry's `projects`) whose folder
    contains it, the longest match winning; else the client whose design system contains it (a
    client, no project).
-4. **Nothing.** Commands that need a project say so and how to give one; the guard, the ledger, the
-   render sentinel and the context then do nothing.
+4. **Nothing.** Commands that need a project say so and how to give one; observation, the ledger,
+   the render sentinel and the context then do nothing.
 
-`--client`/`--project` on a command override the project and `aem status` says so. The guard and the
-Codex hook use the working directory of the call they judge. `aem status` always shows the project,
-its folder, the design system, the frame rate and the registry, and how each was found.
+`--client`/`--project` on a command override the project and `aem status` says so. `aem observe` and
+the Codex hook use the working directory of the call they record. `aem status` always shows the
+project, its folder, the design system, the frame rate and the registry, and how each was found.
 
 The registry is `--registry`, else `AEM_REGISTRY`, else the repository's `registry/clients.json`. It is
 never a path read back from a state file.
@@ -47,33 +46,32 @@ says it did.
 
 | Command | What it does |
 |---|---|
-| `use <client>/<project>` | Checks that the project resolves (registry entry, exact folder name, or a unique `NAME - ` prefix: `joel/P2` finds `P2 - Claude Code`), has a stated frame rate and may be used, and writes the last-used hint (`AEM_HOME` overrides `~/.aem`). It changes nothing a command trusts. In Claude Code, `/aem use` runs it and then pins the project to that session. `use --clear` forgets the hint (`/aem use --clear` drops the session pin). There is no `--path` and no `--fps`: a project is its registered folder, and its frame rate is what the folder states. Operator only. |
-| `codex-hook` | Answers one OpenAI Codex hook event (JSON on stdin, one JSON object out); see Codex below. Codex runs it; the agent may not. |
-| `codex-config [--format toml\|json]` | Prints the hook configuration that makes Codex call `codex-hook`, with the absolute path of the installed `aem`. |
-| `status` | The project, its folder, design system, fps and registry, and **how each was resolved**; the open stage and its time, approvals (standing and stale), active overrides, the last render check, and the status-line text. With no project resolved, it says so and shows the last-used hint, labelled. |
-| `stage start <gate> [scene] [--switch]` | Opens a stage. Every `stage` action is operator only, including the plugin's `stage auto`, which the plugin runs with a nonce. Gates come from the client's registry entry. `--switch` first finishes the stage open for the same scene (or the whole video); `/stage` always uses it. |
+| `use <client>/<project>` | Checks that the project resolves (registry entry, exact folder name, or a unique `NAME - ` prefix: `joel/P2` finds `P2 - Claude Code`), has a stated frame rate and may be used, and writes the last-used hint (`AEM_HOME` overrides `~/.aem`). It changes nothing a command trusts. In Claude Code, `/aem use` runs it and then pins the project to that session. `use --clear` forgets the hint (`/aem use --clear` drops the session pin). There is no `--path` and no `--fps`: a project is its registered folder, and its frame rate is what the folder states. |
+| `status` | The project, its folder, design system, fps and registry, and **how each was resolved**; the open stage (and whether AEM inferred it) and its time, approvals (standing and stale), ledger edits to review, the last render check, and the status-line text. With no project resolved, it says so and shows the last-used hint, labelled. |
+| `recall [client]` | One screen on a client for a new session: the client's standing preferences (the rules file's rows with the client's `preference_prefix`, Joel's `J-`), the last five rulings in the decisions file, quoted in the client's own words and cut with an ellipsis where long, the open questions for the client (the decisions file's "Open questions" section), and the critic's labelled-case count. Read-only. The plugin shows it at session start. |
+| `context` | The text the Claude Code plugin adds to the system prompt: the principle, the project, three rules for the agent, and `recall`. |
+| `stage start <gate> [scene] [--switch]` | Opens a stage. Every `stage` action is operator only, including the plugin's `stage auto`, which the plugin runs with a nonce. Gates come from the client's registry entry. `--switch` first finishes the stage open for the same scene (or the whole video); `/stage` always uses it. Any stage AEM inferred finishes first ("superseded"). |
 | `stage end [gate [scene]]` | Closes the named stage, or the most recently opened one. |
 | `stage pause`, `stage resume` | Pause and resume the current stage. `resume` also ends a wait. |
 | `stage wait <who>` | Work waits on someone: `waiting_on_<who>`. Waiting ends at the next start, finish or resume of that gate. `wait blocked` writes the skill's `blocked`. |
-| `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end`, `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
+| `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end` (which also finishes any stage AEM inferred), `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
 | `report [--no-write]` | Writes `<project>/reports/time.md`. |
-| `approve <item> [path] [--gate G] [--row NAME] [--label]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. An image is approved as a still; `--row` approves one row of a plan table in `path`. `--label` also appends the ruling to the client's labelled cases. Operator only. |
+| `approve <item> [path] [--gate G] [--row NAME] [--label] [--delivery-confirmation]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. An image is approved as a still; `--row` approves one row of a plan table in `path`. `--label` also appends the ruling to the client's labelled cases. `--delivery-confirmation` is what the plugin runs when the operator presses Deliver (see [Delivery confirmation](#delivery-confirmation)). Operator only. |
 | `reject <item> --reason TEXT [--path FILE [--row NAME]] [--gate G] [--label]` | Appends a rejection: of that file (or plan row) when given, else of the item's latest approved render, whose approval stops standing. Operator only. |
-| `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated, verbatim entry to the client's decisions file, marked "entered by <operator>". Operator only. On a turn authority the words must appear verbatim in the operator's message, or it refuses: "paste <contact>'s exact words in your message". |
-| `allow <rule-or-command> --reason TEXT [--once]` | An override the guards honour. `--once` is consumed by the next matching call. `--list`, `--revoke ID`. Operator only. |
+| `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated entry to the client's decisions file: the quote exactly as typed, and who typed it and how ("typed by Yuvraj with /client-said in Claude Code" or "in a terminal"). Operator only. |
 | `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
-| `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval. |
+| `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval; `state` says `approved`, `stale`, `rejected`, `none` or `missing`. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
 | `import-review <csv> [--fps N/D] [--start-tc TC] [--placements FILE]` | Maps a Frame.io comment export to frames, shots and word IDs. Writes review files and draft labelled cases; never edits the decisions file or the critic's file. |
+| `observe` | Records one tool call, read as JSON on stdin (`{tool, input, cwd, session, agent}`), and says whether it delivers media with no current approval. Never refuses. The plugin runs it before every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit` and `NotebookEdit` call; see [Observation](#observation). |
 | `rendered` | Checks the renders a finished shell command wrote, read as JSON on stdin (`{command, cwd, started_at, exit_code, probe_only}`). Runs `check-render` on each and returns a toast line and a note for the agent. The plugin runs it after every `Bash` call; see Render sentinel below. |
-| `guard` | Decides one tool call, read as JSON on stdin (`{tool, input, cwd}`). Exit 0 allow, 1 deny. The plugin runs it before every file or shell tool call; see Guards below. |
-| `drift [--client ID] [--skills-dir DIR]` | Text exports vs their HTML pages, installed skill vs master, and rule IDs in the skill vs the rules file. |
-| `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. Operator only. |
-| `authority open --session S --turn T [--origin O] [--prompt-id P]` | The plugin runs it when a turn begins with the operator's prompt (read on stdin): makes a turn authority and records the prompt; prints the nonce once. `--prompt-id` is the same prompt starting a later turn (it was queued). Operator only, and never on a turn authority. See [Operator authority from chat](#operator-authority-from-chat). |
-| `authority close --session S` | The turn ended: every authority of that session is deleted. Operator only, never on a turn authority. |
-| `authority uses [--after N]` | The operator commands that succeeded on the authority in `AEM_OPERATOR_TURN` (the plugin toasts each). Open. |
-| `integrity` | Compares each ledger with what AEM wrote and lists every line AEM did not write, with whether an operator's message let the write through. Exit 1 when there is any. See [Ledger integrity](#ledger-integrity). |
+| `integrity` | Compares each ledger with what AEM wrote and lists every line AEM did not write, with the agent's observed calls that wrote that file. Exit 1 when there is any. See [Ledger integrity](#ledger-integrity). |
 | `accept-edit [--file NAME] [--reason TEXT]` | Accepts what `integrity` found (all ledgers, or one), recording an `edit_accepted` event, and re-baselines. Operator only. |
+| `drift [--client ID] [--skills-dir DIR]` | Text exports vs their HTML pages, installed skill vs master, and rule IDs in the skill vs the rules file. |
+| `doctor` | Is AEM installed and able to record here? Read-only checks, each ok, warn or fail: this command and its Python; `ffmpeg`/`ffprobe` on PATH; the registry loads and each client's folders can be read (a drive mounted); the project resolved here and its frame rate; the plugin installed for this user (`~/.claude/plugins/installed_plugins.json`, or `AEM_CLAUDE_DIR`) has this command's version; the nonce folder can be written; integrity and drift for the resolved client. Exit 1 when a check fails. |
+| `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. Operator only. |
+| `codex-hook` | Answers one OpenAI Codex hook event (JSON on stdin, one JSON object out); see Codex below. |
+| `codex-config [--format toml\|json]` | Prints the hook configuration that makes Codex call `codex-hook`, with the absolute path of the installed `aem`. |
 
 ## Frame rate
 
@@ -105,7 +103,8 @@ good place to say where the rate came from).
   "scenes": {"fd_S01_next-token": {"composition": "compositions/next-token.html"}},
   "flash": {"min_area_pct": 0.1},
   "placements": "data/edit.json",
-  "render_sentinel": {"command_patterns": ["\\bbin/render\\.sh\\b"], "output_dirs": ["renders"]}
+  "render_sentinel": {"command_patterns": ["\\bbin/render\\.sh\\b"], "output_dirs": ["renders"]},
+  "stage_inference": {"scene_dirs": ["src", "compositions"]}
 }
 ```
 
@@ -130,30 +129,25 @@ The skill's line, with the skill's fields first:
 ```
 
 AEM's events: `start`, `finish`, `pause`, `resume`, `waiting_on_<who>`, `blocked`, the automatic
-events above, `render_check`, `approval`, `rejection`, `client_said`, `allow`, `allow_used`,
-`allow_revoked`, `review_import`, `denial`, `labelled_case`, `inbox_resolved`, and since 0.9.0
-`operator_prompt` (the operator's message that opened a turn authority: `prompt_text` exactly as typed,
-`prompt_sha256`, `prompt_id`, `session`, `turn`, `origin`; `recorded_late` when it was first used in a
-project other than where it was typed), `operator_turn` (the same prompt starting a later turn),
-`allowed_by_operator_prompt` (a call the guard would have denied, with `rule`, `tool`, `subject`,
-`prompt_id`) and `edit_accepted`. Extra fields after the five: `source`, `session`, `tool`,
-`duration_s`, `render`, `render_sha256`, `result`, `backfilled`, and on anything written on a turn
-authority `via: "chat"`, `prompt_id` and `prompt_excerpt`. Events entered with `--at` carry
+events above, `stage_inferred` (a gate AEM opened itself: `inferred: true`, `inferred_from` the file),
+`observed` (one per tool call: `tool`, `command`, `reads`, `writes`, `paths`, `delivery`, `session`,
+`agent`), `render_check`, `approval`, `rejection`, `client_said`, `review_import`, `labelled_case`,
+`inbox_resolved`, `edit_accepted`, and the delivery outcomes `delivery_stopped`, `delivery_held` and
+`delivery_unconfirmed`. Extra fields after the five: `source`, `session`, `tool`, `duration_s`,
+`render`, `render_sha256`, `result`, `via`, `inferred`, `backfilled`. Events entered with `--at` carry
 `"backfilled": true` and the report counts them.
 
 ### approvals.jsonl
 
 ```json
-{"gate": "G4", "scene": "fd_S01_next-token", "render": "renders/v09/fd_S01_next-token_v09.mp4", "render_sha256": "<64 hex>", "source_revision": "<git commit, or sha256: of the scene source>", "approver": "Yuvraj", "date": "2026-10-06", "type": "approval", "ts": "...", "render_check": "pass"}
+{"gate": "G4", "scene": "fd_S01_next-token", "render": "renders/v09/fd_S01_next-token_v09.mp4", "render_sha256": "<64 hex>", "source_revision": "<git commit, or sha256: of the scene source>", "approver": "Yuvraj", "date": "2026-10-06", "type": "approval", "ts": "...", "render_check": "pass", "via": "slash command"}
 ```
-
-An approval or rejection made on a turn authority also carries `via: "chat"`, `prompt_id` and
-`prompt_excerpt` (the labelled case it labels carries `via` and `prompt_id`).
 
 `type` is `approval` (the default for lines without it), `rejection` (with `reason`) or `stale`
 (with `superseded_by_sha256` and `superseded_by_render`). An approval stands until a later
 rejection of its item or a later stale line for its SHA-256. A stale approval stays stale even if
-the old bytes come back: re-approve.
+the old bytes come back: re-approve. `via` says how the operator made it: `terminal`, `slash command`
+or `delivery confirmation` (then `note` says Deliver was pressed).
 
 `item_kind` says what was reviewed: `render` when absent (the skill's lines), `still` for an image
 (G3), `plan_row` for one row of a plan table (G2), which carries `plan_file`, `plan_row` (the row's
@@ -169,7 +163,80 @@ and the status line's stale count is renders only.
 `waiting_on_client_ids`), **waiting on others**, **paused**, **attended between turns** (observed
 session time that is none of these) and **unobserved** (stage time when no ledger was recording).
 Every number is a difference of recorded timestamps. Overlapping stages of one gate are counted
-once. Open stages are listed and counted to the report time.
+once. Open stages are listed and counted to the report time. Stages AEM inferred are counted like
+any other and listed under "Inferred stages" with the file that started each.
+
+### Inferred stages
+
+If no stage is open when the agent changes a plan file (`review_inbox.plan_files` and
+`style-guide.md`: G2), a still (under `stills/`: G3), a scene source (any file under `src/` or
+`compositions/`: G4) or a render (media under `renders/`, or what a render command wrote: G4), AEM
+records `stage_inferred` for that gate (scene: the whole video), flagged as inferred, so a forgotten
+`/stage` loses no time. The gates are the client's `review_inbox.gates` (plan row, still, render); the
+folders can be set per client or project under `stage_inference` (`plan_files`, `stills_dirs`,
+`scene_dirs`, `render_dirs`, `gates`). An inferred stage ends when the operator starts any stage
+(`finish`, "superseded by stage start …") or when the session ends (Codex: its SessionEnd). Nothing is
+inferred while any stage is open. The status line shows it: `G4 (inferred)`.
+
+## Observation
+
+`aem observe` records every tool call the plugin sends it (before the call runs) as an `observed`
+event in the project's `events.jsonl`, and never refuses one:
+
+| Tool | Recorded |
+|---|---|
+| `Bash` | `command` (the first 500 characters; `command_chars` when longer), `paths` (words that name files: absolute, `~`, `./`, `../`, relative words with a `/`, names with an extension; an XPath `//asset` or a URL is not one), `writes` (redirect targets, `-o`/`--output` values, `cp`/`mv`/`rsync`/`ditto`/`install`/`ln` destinations, `tee`, `touch`, `rm`, `sed -i` files), and `delivery` when it is one |
+| `Read` | `reads` |
+| `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | `writes`, and `delivery` for an `.fcpxml` that names media |
+
+Paths are shown relative to the project inside it, `~/…` under the home folder, else absolute, as
+the call named them (symbolic links are not resolved for the record). A shell command is split the way
+a shell splits it, so `ls ~/Tools/fcp-edit-workflow;` names the folder, not the folder and a `;`, and
+a comment after `#` is not a word. With no project resolved nothing is recorded. `aem observe` is open:
+it only records.
+
+**Limits.** Parsing is text: a path built at run time (`$F`, a glob) is recorded as written; a script
+that writes files it does not name, or a program's own configuration, is not seen; MCP tools are not
+observed. The record keeps the command itself, so a person can read what was run.
+
+## Delivery confirmation
+
+The only interruption AEM makes. A call is a **delivery** when it is not a read (a command made only
+of programs that read, such as `cat`, `grep`, `unzip`, `xmllint`, `ffprobe`, `aem check-approval`, or
+inline Python with no write in it, never is), names media that exists, and:
+
+- writes an FCPXML (an `.fcpxml` word, a `Write`/`Edit` of an `.fcpxml`, inline code that writes one), or
+- copies or moves media into a delivery folder (a destination matching the client's
+  `approval_gates.delivery_patterns`, by default its `command_patterns`; Joel's include `Animations Done`
+  and `deliver(y)`), or
+- matches one of the client's `approval_gates.command_patterns` (placement, delivery).
+
+The media checked is what the command names, less what it writes (a copy's destination, an `-o`
+output). When any of it has no current approval (none, re-rendered after its approval, or rejected),
+`observe` answers with the question and the approvals that would answer it:
+
+```json
+{"delivery": {"kinds": ["copy"], "question": "fd_S01 was re-rendered after you approved it. Deliver anyway?",
+  "unapproved": [{"item": "fd_S01", "path": "renders/fd_S01_v02.mp4", "state": "stale"}], "gate": "G6",
+  "approve": [["approve", "fd_S01", "/…/renders/fd_S01_v02.mp4", "--gate", "G6", "--delivery-confirmation"]],
+  "slash": ["/approve fd_S01 renders/fd_S01_v02.mp4 G6"]}}
+```
+
+The plugin shows the question in the engine's dialog with **Deliver** and **Stop**:
+
+| Answer | What happens |
+|---|---|
+| Deliver | The plugin runs each `approve … --delivery-confirmation` with a one-time nonce (the operator's answer), recorded with `via: "delivery confirmation"`, then the call runs. If an approval cannot be recorded, the call still runs and `delivery_unconfirmed` says why. |
+| Stop (or the dialog is dismissed) | The call is refused; the agent is told the operator stopped it and not to deliver another way. `delivery_stopped` is recorded. |
+| No dialog can be shown (a `-p` run: no surface) | The call is refused once with the exact `/approve` command to type (`delivery_held`). The identical call repeated goes through and is recorded as `delivery_unconfirmed`. |
+
+The approval gate is the client's deliver gate (the gate whose name contains "deliver", Joel's G6),
+else the open stage's. A delivery of approved media asks nothing; the `observed` event still records
+its media and their state. Codex shows no dialog: its hook records the delivery and asks nothing.
+
+**Limits.** A placement tool that reads its renders from a manifest the command does not name, or a
+delivery folder no pattern matches, is not seen as a delivery; a read is recognised by program name and
+flags, so a script *file* is not known to only read.
 
 ## Render check limits
 
@@ -213,11 +280,12 @@ After every `Bash` call the agent makes while a project is active, the plugin se
   recursively) whose modification time is at or after the command's start, less 2 seconds. An output
   value with `$` or `{` in it (a shell variable, a batch `{slug}`) adds its folder to the search.
   At most `max_outputs` (default 100) files are checked, the newest ones.
-- **What happens** Each file goes through `check-render` (recorded as a `render_check` event, and
-  earlier approvals of a changed render marked stale). The operator gets a toast: `PASS`/`FAIL` with
-  the first reason for one file, counts for several, and the number of stale approvals. The agent
-  reads the full result after the command's own output. The status line is redrawn, so its stale
-  count is current.
+- **What happens** If no stage is open, AEM first infers the render gate (G4). Each file goes through
+  `check-render` (recorded as a `render_check` event, and earlier approvals of a changed render marked
+  stale). The operator gets a toast: `PASS`/`FAIL` with the first reason for one file, counts for
+  several, the number of stale approvals, and `· G4 inferred` when it opened the stage. The agent reads
+  the full result after the command's own output. The status line is redrawn, so its stale count is
+  current. Nothing is ever blocked: a failed check is information for the agent and the operator.
 
 Limits:
 
@@ -228,7 +296,7 @@ Limits:
 - Outputs are found by modification time, so a render written outside the output folders and
   not named on the command line is missed, and any other media file that changes under `renders/`
   while the command runs is checked too.
-- The check blocks the agent until it finishes (up to 10 minutes): about a second per 4K scene on
+- The check makes the agent wait until it finishes (up to 10 minutes): about a second per 4K scene on
   this machine; a full `renderall.sh` of 59 scenes adds about a minute.
 - Every `Bash` call starts one `aem rendered` process (about 0.07 s) even when it is not a render,
   because the decision lives in the CLI, not the plugin.
@@ -244,97 +312,54 @@ it and runs the commands each item names.
 | Plan row (G2) | A row of a table in the plan files (`review_inbox.plan_files`, default `shotlist.md`; Joel also `visual-plan.md`) whose text has no approval or rejection. The row is named by its first cell. Changing an approved row's text puts it back, marked "changed since it was approved". | `aem approve <row> <file> --row <row> --gate G2 --label` | `aem reject <row> --path <file> --row <row> --gate G2 --label --reason …` |
 | Still (G3) | An image under `stills/` (`review_inbox.stills_dirs`) whose SHA-256 has no ruling. | `aem approve <item> <file> --gate G3 --label` | `aem reject <item> --path <file> --gate G3 --label --reason …` |
 | Render (G4) | A scene's last `render_check`, if the file is unchanged since and its SHA-256 has no ruling. Failed checks are listed with the failure. | `aem approve <scene> <file> --gate G4 --label` | `aem reject <scene> --path <file> --gate G4 --label --reason …` |
-| Guard denial | A `denial` event from the last `denial_days` (default 2) not yet answered. | `aem allow <rule> --once --inbox-ref denial:<line> --label` ("Allow once") | `aem inbox dismiss denial:<line> --label --reason …` |
 | Client comment | A draft from `aem import-review` (`reviews/<client>/*-labelled-cases.draft.jsonl`) not yet ruled on. Buttons Keep, Change, Remove. | `aem inbox accept <id> --ruling keep\|change\|remove --label` | `aem inbox dismiss <id> --label --reason …` |
 
-Gates come from `review_inbox.gates`. A button whose command is not `approve`, `reject`, `allow` or
-`inbox` is refused by the plugin.
+Gates come from `review_inbox.gates`. A button whose command is not `approve`, `reject` or `inbox` is
+refused by the plugin.
 
 **Labelled cases.** Every ruling made with `--label` appends one line to the client's
 `critic/labelled-cases.jsonl`, in that file's own field names (read from its header line), with
 `"source"` set to the operator's id (`"yuvraj"`). AEM adds `item_kind`, `gate`, `reason`, and where
-they apply `decision`, `inbox_ref`, `rule`, `plan_file`, `plan_row`, `plan_row_sha256`,
-`words_source`. These lines are `"status": "development case"`: they are the operator's rulings,
-not the client's, so they never count toward the critic's labelled set (M-19), and the client's
-words field stays null. An accepted client comment keeps the client's words verbatim from the CSV
-(`words_source` says which rows), takes the shot's latest approved render's SHA-256, and is
-`"labelled"` only when it has the ruling, the words and that SHA-256. `"ruling"` is `keep`
-(approved) or `change` (rejected) for plan rows, stills and renders, the button's ruling for a
-client comment, and null for a guard denial, whose `decision` is `allowed once` or `dismissed`.
+they apply `decision`, `inbox_ref`, `plan_file`, `plan_row`, `plan_row_sha256`, `words_source`. These
+lines are `"status": "development case"`: they are the operator's rulings, not the client's, so they
+never count toward the critic's labelled set (M-19), and the client's words field stays null. An
+accepted client comment keeps the client's words verbatim from the CSV (`words_source` says which
+rows), takes the shot's latest approved render's SHA-256, and is `"labelled"` only when it has the
+ruling, the words and that SHA-256. `"ruling"` is `keep` (approved) or `change` (rejected) for plan
+rows, stills and renders, and the button's ruling for a client comment.
 
 Limits: the list is read when `/inbox` runs and after each button, not live; a plan table is
 recognised only as a Markdown table with a header row; a still or render is matched by SHA-256, so
 an identical file under another name counts as already ruled; the mobile app draws no text field,
 so Reject there says to use `/reject` instead. Pressing a button is the operator's act inside the
-pane; the agent cannot press it, and `aem inbox accept`/`dismiss` from the agent's shell is refused by
-the CLI (see Operator-only commands).
-
-## Guards (`aem guard`)
-
-The plugin asks `aem guard` about every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
-`Glob`, `Grep` and `LS` call, the agent's and its subagents', whether or not its own view shows a
-project: the CLI resolves the project itself from the call's working folder (or `AEM_PROJECT`, or the
-session pin), so there is no stored state for a session to trust or a test to overwrite (the plugin's
-view, which draws the status line and the prompt section, is refreshed every 30 seconds). With no
-project resolved the guard allows every call except a write into the operator-nonce folder.
-
-**On a turn authority the guard never denies** (0.9.0). The guard exists to stop the agent acting on its
-own authority; when the operator's own message started the turn, a call any rule below would deny is
-allowed and appended as an `allowed_by_operator_prompt` event naming the rule, the tool, the call and the
-prompt (`prompt_id`, an excerpt), and the operator gets a toast. Overrides (`/allow`) are not used up by
-such calls. In a turn without one (autonomous, a loop, a schedule, a peer's message) every rule applies. Every denial is appended to `events.jsonl` as a
-`denial` event, and its message tells the agent why and how the operator can approve or override.
-MCP tools are not checked.
-
-| Rule | Denies | Limits |
-|---|---|---|
-| AEM-G01 protected file | `Write`/`Edit`/`NotebookEdit` to a protected file (the registry's `protected_files`, plus the registry itself), compared after resolving symbolic links; a `Write`/`Edit` into the operator-nonce folder `~/.aem/nonces/` even with no project resolved; a `Bash` command whose text names a protected file (by path or file name), except AEM's read-only commands. | A shell command is read as text: a path assembled at run time (`f=events; echo >> $f.jsonl`), a script file that writes the ledger, or an MCP tool that writes files is not seen. Reading with the `Read` tool is allowed; `cat` of a protected file is denied as a side effect. |
-| AEM-G02 outside the client's folders (words are split as a shell splits them, so `ls ~/Tools/x;`, `(cd ~/x && ls)` and `ls ~/x|head` name `~/Tools/x` and `~/x`; an XPath such as `//asset` is not a path) | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no project resolved nothing is out of scope. |
-| AEM-G03 blocked command | A `Bash` command containing one of the client's `blocked_commands` (`snapshot --describe` for Joel). | Plain text match: a different spelling or a script that runs it is not seen. |
-| AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected): as a path, a bare relative word (`renders/x.mp4`) or a path inside quoted code; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. **Never a read** (0.9.0): a command made only of programs that read (`cat`, `grep`, `rg`, `head`, `unzip`, `xmllint` without output, `ffprobe`, `jq`, `aem check-approval`, inline Python or Node code with no write in it, ...) is not a placement. Naming an `.fcpxml` with no render is no longer denied: there is nothing to check. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. A read is recognised by program name and flags: a script *file* is not known to only read, so it is checked; a read-only program with a write redirect (`>`) is not a read. |
-
-**There is no AEM-G04 any more** (the number is not reused). Until 0.8.0 the guard matched the text of a
-shell command for the operator-only `aem` commands, which denied a commit message or a heredoc that
-merely mentioned one and could not see a command spelled another way. The CLI now refuses those
-commands itself, wherever they are run from (next section), so the guard no longer reads shell text for
-them: a commit message, a heredoc, a grep or an echo that mentions `aem approve` is just text.
-
-Overrides: `aem allow <target> --reason …` where the target is a rule ID (`AEM-G02`), a command
-text or a path. `--once` (the default for `/allow`) is consumed by the next call it lets through and
-logged as `allow_used`; a standing allow is logged on every use until `aem allow --revoke ID`.
-
-If `aem` cannot start, the plugin lets the call through and toasts that it was not checked: the
-guards fail open so a broken install does not stop work, and the toast says so every time.
-
-These are recorded checks inside Claude Code and, once its hooks are set up, Codex; not security
-boundaries. The operator's own shell, another editor, or Codex without the hooks is not checked.
+pane; `aem inbox accept`/`dismiss` from the agent's shell is refused by the CLI (next section).
 
 ## Operator-only commands
 
-`use`, `stage` (every action), `approve`, `reject`, `client-said`, `allow`, `new-client`,
-`accept-edit`, `inbox accept`, `inbox dismiss`, and the plugin's `authority open` and `close`, change what the operator owns: approvals, rulings, overrides, the
-ledger, the registry. **The CLI itself refuses them** unless the operator is shown to be running them,
-checked at the entry of the command (and again inside the functions that write the records), so how the
-command is spelled (a path, a wrapper, a script, `python3 -m aem`) does not matter. One of these must hold:
+`approve`, `reject`, `client-said`, `stage` (every action), `accept-edit`, `new-client`, `inbox accept`
+and `inbox dismiss` write the record: approvals, rulings, the client's words, stages, accepted ledger
+edits, the registry. They are the only commands the agent cannot run, and the only ones that matter,
+because they are what makes the record the operator's. **The CLI itself refuses them** unless the
+operator is shown to be running them, checked at the entry of the command (and again inside the
+functions that write the records), so how the command is spelled (a path, a wrapper, a script,
+`python3 -m aem`) does not matter. One of these must hold:
 
 - **(a) Terminal.** `stdin` and `stdout` are a terminal, `/dev/tty` can be opened, and none of the agent
   markers is in the environment: `CLAUDECODE`, `AI_AGENT`, `CLAUDE_CODE_ENTRYPOINT`,
   `CLAUDE_CODE_SESSION_ID`, `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX`. For `client-said`, whose quote
   arrives on stdin, stdin need not be a terminal: type or paste the quote and press Control-D, or use
   `/client-said`. Output piped to another program (`aem approve … | tee`) is not a terminal.
-- **(b) Plugin.** The plugin's slash-command handler makes a random one-time nonce, writes only its
-  SHA-256 to `~/.aem/nonces/<hash>` with a 60-second expiry, and passes the nonce in
-  `AEM_OPERATOR_NONCE` to that one `aem` call. `aem` checks the hash, deletes the file (so it works once),
-  and removes the variable from its own environment so nothing it starts inherits it. The nonce is never
-  written, logged or shown. The plugin also gives one to its own automatic ledger events (`stage auto`).
-- **(c) Chat** (0.9.0). The operator's message stands for its turn: `AEM_OPERATOR_TURN` holds a valid
-  turn authority (next section). Every operator command is accepted on it except `authority open` and
-  `authority close` (an authority that could open authorities would let the agent write the prompt that
-  authorises it). It is not used up; `aem` removes the variable from its own environment.
+- **(b) Slash command.** The plugin's slash-command handler (and the delivery confirmation's Deliver)
+  makes a random one-time nonce, writes only its SHA-256 to `~/.aem/nonces/<hash>` with a 60-second
+  expiry, and passes the nonce in `AEM_OPERATOR_NONCE` to that one `aem` call. `aem` checks the hash,
+  deletes the file (so it works once), and removes the variable from its own environment so nothing it
+  starts inherits it. The nonce is never written, logged or shown. The plugin also gives one to its own
+  automatic ledger events (`stage auto`).
 
-A refusal exits 2, says which command and why, and tells an agent to ask the operator. `status`,
-`context`, `report`, `check-render`, `check-approval`, `import-review`, `inbox` (list), `drift`, `guard`,
-`rendered`, `codex-config` and `codex-hook` are open.
+A refusal is one line, exit 2: "`aem approve` is the operator's command, run from their terminal or its
+slash command, and this process is neither (…): ask the operator to run it." The agent then asks the
+operator in one sentence and carries on once they have run it. Approvals, rejections, the client's words
+and accepted edits say how they were made: `via` is `terminal`, `slash command` or `delivery confirmation`.
 
 **Verified on 6 October 2026** (the probe is `tests/live/tty-probe.py`):
 
@@ -345,57 +370,14 @@ A refusal exits 2, says which command and why, and tells an agent to ask the ope
 | The desktop app's Terminal panel, or a Terminal window | terminals | opens |
 | A pseudo-terminal the agent's own shell allocates (`script`, Python's `pty`) | terminals | **opens** |
 
-Neither agent's shell can open `/dev/tty`, so neither can pass (a) by itself. But the last row shows the
-terminal test alone is not enough: an agent can allocate a pseudo-terminal and pass it. So (a) also
-requires that none of the agent markers is set. They are set in the environment of the Claude Code Bash
-tool (`CLAUDECODE`, `AI_AGENT`, `CLAUDE_CODE_*`) and of Codex's shell (`CODEX_CI`, `CODEX_THREAD_ID`,
-`CODEX_SANDBOX`), a child process inherits them through `script` or `pty`, and the operator's own
-terminal has none of them. Claude Code run as a CLI in a Terminal window was **not** observed: the
-`claude` in that tab could not authenticate (its OAuth session had expired). Run `tests/live/tty-probe.py`
-from inside such a session to see it.
+Neither agent's shell can open `/dev/tty`, so neither can pass (a) by itself; a pseudo-terminal the
+agent allocates passes the terminal test, which is why (a) also requires that none of the agent markers
+is set (a child process inherits them through `script` or `pty`; the operator's own terminal has none).
 
-**Limits. This is cooperative, not a security boundary.**
-
-- An agent that removes the markers from its environment (`env -u`, `env -i`) and then allocates a
-  pseudo-terminal passes (a). An agent whose shell can write a file can write a nonce hash file itself and
-  pass (b): the guard denies its `Write` and `Edit` tools there, but not a shell redirect.
-- A script that imports the `aem` package and sets its private flag passes the in-library backstop.
-- What catches the result is the records themselves: ledgers are append-only, approvals carry the render's
-  SHA-256, and `aem integrity` (0.9.0) reports every ledger line AEM did not write.
-- The marker list is the markers observed today; another agent host that sets none would pass (a) from a
-  pseudo-terminal.
-
-## Operator authority from chat
-
-AEM's first principle since 0.9.0: **it allows whatever the operator asks for in chat.** The guard and the
-operator-only commands exist only to stop the agent acting on its own authority. When the operator has
-asked, the decision is the operator's; AEM records it and never blocks it.
-
-| When | The plugin | The CLI |
-|---|---|---|
-| A prompt arrives from an operator origin: the composer, the Remote Control bridge or the SDK host. Never a plugin, a peer session, a scheduled or `/loop` trigger, a task notification or the agent. | Before the prompt enters, keeps it; when its turn starts, runs `aem authority open --session S --turn T --origin O` (with its one-time nonce) and the prompt's exact text on stdin. A prompt typed during a turn is opened for that turn at once, and again (same `prompt_id`) for the next turn if its text starts it. | Writes a random nonce's SHA-256 to `~/.aem/nonces/<hash>` with `kind: "turn"`, the prompt text, session, turn, origin, `prompt_id` and an expiry 60 minutes on; appends `operator_prompt` to the project's `events.jsonl`; prints the nonce once. |
-| The turn runs. | Sets `AEM_OPERATOR_TURN=<nonce>` in its process environment, which every `Bash` call (the agent's and its subagents') and every `aem` call inherits. After each `Bash` call, `aem authority uses` and a toast per operator command: `approve fd_S01 via chat: '<prompt excerpt>'`. | `guard`: allows what it would deny and logs `allowed_by_operator_prompt`. Operator commands: accepted, each record carrying `via: "chat"`, `prompt_id`, `prompt_excerpt`. `client-said`: the quote must be in the prompt. |
-| The turn ends (`turn.complete` of the main loop), the session ends, or a prompt from a non-operator origin starts a new turn. | Runs `aem authority close --session S` and unsets `AEM_OPERATOR_TURN`. | Deletes every authority of that session. The nonce now opens nothing. |
-| 60 minutes pass. | — | The authority is refused as expired, whatever the turn does. |
-
-**Limits, plainly.**
-
-- The authority is the *turn's*, not the command's: during that turn the agent can run any operator
-  command, and the guard denies nothing. AEM cannot tell whether the operator's message actually asked for
-  that action; the context text and the studio skill tell the agent to act only on what the latest message
-  asks, and the record (`via: "chat"`, the prompt id, the full prompt text in `operator_prompt`) is what
-  lets the operator check afterwards. The only check on the words themselves is `client-said`'s.
-- The CLI does not verify that the process presenting the nonce belongs to that session; anything that
-  inherits or reads the environment of the turn's processes (a background job started in the turn, a
-  child process) holds the nonce until the turn ends.
-- During an operator turn the guard does not stop the agent writing `~/.aem/nonces/`, so it could forge an
-  authority for a later turn, or write a ledger by hand. Both are logged as `allowed_by_operator_prompt`,
-  and a hand-written ledger line stays flagged by `aem integrity` until the operator accepts it.
-- An agent that writes a nonce file by hand in an autonomous turn (its shell is not stopped from writing
-  files) forges one too: as before, cooperative, not a security boundary.
-- If a `turn.complete` is never delivered (a crash), the authority lasts until the next non-operator turn
-  starts, the session ends, or 60 minutes pass.
-- Codex has no turn authority: there the operator runs operator commands in a terminal.
+**This is not a lock.** An agent that strips the markers and allocates a pseudo-terminal, or writes a
+nonce hash file with a shell command, passes. AEM does not stop an agent that wants to misbehave; it
+makes it visible: the observed tool calls show the command it ran, and `aem integrity` shows any ledger
+line written outside `aem`.
 
 ## Ledger integrity
 
@@ -411,42 +393,43 @@ manifest and reports:
 | `edited` | lines AEM wrote that now read differently |
 | `removed` | lines AEM wrote that are gone |
 
-Each finding says whether the guard let a call naming that file through on an operator's message
-(`allowed_by_operator_prompt`, with the prompt) or nothing recorded such a call ("outside any recorded
-operator prompt"). Findings stay until `aem accept-edit` (operator only; on chat it records the prompt),
-which appends an `edit_accepted` event (file, lines, examples, reason, what explained it) and re-baselines
-that file. `aem status` and the status line count the findings (`· 2 ledger edits to review`), and the
-agent's context tells it about them.
+Each finding says whether AEM observed the agent writing that file (`observed_writes`: an observed
+`Write`/`Edit` of it, or a shell command naming it that is not a read, with the time, tool and session)
+or not ("an edit outside the agent": an editor, a terminal, another tool). Findings stay until
+`aem accept-edit` (operator only), which appends an `edit_accepted` event (file, lines, examples,
+reason, the observed writes) and re-baselines that file. `aem status` and the status line count the
+findings (`· 2 ledger edits to review`), and the agent's context tells it about them. This is the
+whole safeguard: detection, not prevention.
 
 The first time AEM writes a file that has no manifest, the lines already in it become the baseline,
 trusted as they stand: AEM cannot tell an older hand-written line from its own. Until then `integrity`
-says "no baseline yet". The manifests are protected like the ledgers (AEM-G01, and the folder name
-`.aem-integrity` in a shell command). Limits: the manifest is beside the ledger, so whoever can rewrite
-one can rewrite both consistently; a line identical to one AEM wrote cannot be told apart from it; the
-rules file is not a ledger and is not tracked.
+says "no baseline yet". Limits: the manifest is beside the ledger, so whoever rewrites one consistently
+with the other is not caught; a line identical to one AEM wrote cannot be told apart from it; the rules
+file is not a ledger and is not tracked.
 
 ## Codex (`aem codex-hook`)
 
 OpenAI Codex 0.146 runs command hooks (feature `hooks`). `aem codex-config` prints a `[hooks]` table
 for `~/.codex/config.toml` (or `--format json` for `~/.codex/hooks.json`) that sends six events to
-`aem codex-hook`, which answers each with the same code the plugin calls:
+`aem codex-hook`, which answers each with the same code the plugin calls. It keeps context, ledger
+events and the render sentinel; it never denies a call.
 
 | Codex event | AEM does | Codex reads back |
 |---|---|---|
-| `SessionStart` | records `session_start` (`agent: codex`) | the AEM context text as `additionalContext`, with a note that Codex has no slash commands |
+| `SessionStart` | records `session_start` (`agent: codex`) | the AEM context text (principle, project, recall) as `additionalContext`, with a note that Codex has no slash commands or delivery dialog |
 | `UserPromptSubmit` | records `prompt` and `turn_start` | nothing |
-| `PreToolUse` (`Bash`, `apply_patch`) | the guard: a Bash command as is; a patch as one `Write` per file it adds, updates, deletes or moves, with its added lines as content (so AEM-G05 sees FCPXML media) | `permissionDecision: "deny"` with the same message as the plugin's, or nothing |
+| `PreToolUse` (`Bash`, `apply_patch`) | `observe`: an `observed` event (a patch's files as `writes`; its added lines checked for FCPXML media), and an inferred stage when none is open. A delivery is recorded with its media's approval state, not asked about | nothing |
 | `PostToolUse` (`Bash`) | the render sentinel (`aem rendered`), timed from the PreToolUse of the same `tool_use_id`; a `tool_call` event when 30 s or more | the render result as `additionalContext` |
 | `Stop` | records `turn_end` | nothing |
-| `SessionEnd` | records `session_end` | nothing |
+| `SessionEnd` | records `session_end` and finishes any stage AEM inferred | nothing |
 
-Verified live with codex-cli 0.146.0 (`tests/live/codex-hooks-check.sh`): the SessionStart hook
-ran and the PreToolUse hook blocked an agent's `aem approve` with AEM-G04. The other events are
-covered by unit tests built from the shapes in Codex's hooks reference.
+Verified live with codex-cli 0.146.0 (`tests/live/codex-hooks-check.sh`, at 0.8.0): the SessionStart
+hook ran and the agent's `aem approve` was refused by the CLI itself. The other events are covered by
+unit tests built from the shapes in Codex's hooks reference.
 
-Limits beyond the guards' own: Codex has no slash commands, toasts, status line or inbox, so the
-operator runs `aem` commands in a terminal; there is no timer, so idle time is not detected live
-(gaps appear in the report as unobserved); a hook needs the operator's trust in Codex's `/hooks`
-review before it runs, and again after it changes; a project-level `.codex/hooks.json` was not
-loaded by `codex exec` in testing, so install the hooks at user level; MCP tools are not checked;
-and Codex treats a hook that fails or cannot start as allowing the call, as the plugin does.
+Limits: Codex has no slash commands, toasts, status line, inbox or dialog, so the operator runs `aem`
+commands in a terminal and a delivery is never asked about; there is no timer, so idle time is not
+detected live (gaps appear in the report as unobserved); a hook needs the operator's trust in Codex's
+`/hooks` review before it runs, and again after it changes; a project-level `.codex/hooks.json` was not
+loaded by `codex exec` in testing, so install the hooks at user level; MCP tools are not observed; and
+Codex treats a hook that fails or cannot start as allowing the call, as the plugin does.

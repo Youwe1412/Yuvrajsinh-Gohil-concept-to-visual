@@ -13,10 +13,18 @@ Rules for this file:
 - When the client confirms, corrects or strikes a rule, add an entry here first, then update
   `rules.md` and the system page.
 - When Aavkar Educational Motion Studio (AEM) is loaded, entries are added by the operator with
-  `/client-said` (or `aem client-said`), never by an agent.
+  `/client-said` (or `aem client-said`), never by an agent. `aem recall` shows the newest five, and the
+  open questions below, at the start of every session.
 
 ---
 
 ## {{DATE}} · Client added
 
 No rulings yet. Add the client's brief here, in their words, before the first project.
+
+---
+
+## Open questions for {{CONTACT}}
+
+- (Questions to ask the client. `aem recall` lists them; strike one out by moving its answer into a dated
+  entry above.)

@@ -1,23 +1,24 @@
-"""aem codex-hook: the same checks, context and ledger for OpenAI Codex, through its command hooks.
+"""aem codex-hook: the same record for OpenAI Codex, through its command hooks. It never denies a call.
 
 Codex (0.146 and later, feature `hooks`) runs a command for each hook event with one JSON object
 on stdin and reads one JSON object from stdout. This module answers every event AEM uses with the
-code the Claude Code plugin calls, so the two agents get the same decisions:
+code the Claude Code plugin calls, so both agents leave the same record:
 
-  SessionStart      the AEM context text as additionalContext; session_start in events.jsonl
+  SessionStart      the AEM context text (principle, project, recall) as additionalContext;
+                    session_start in events.jsonl
   UserPromptSubmit  prompt and turn_start
-  PreToolUse        aem guard on Bash and apply_patch (each file the patch touches); a denial is
-                    {"hookSpecificOutput": {"permissionDecision": "deny", ...}}
+  PreToolUse        aem observe on Bash and apply_patch: an `observed` event with the files the call
+                    names, and an inferred stage when none is open. Never a denial, and no delivery
+                    confirmation: a delivery of unapproved media is recorded, not asked about.
   PostToolUse       the render sentinel after Bash (aem rendered), as additionalContext; a
                     tool_call event for calls of 30 s or more
   Stop              turn_end
-  SessionEnd        session_end
+  SessionEnd        session_end (and the end of any stage AEM inferred)
 
-What Codex cannot do here, and so AEM does not do in Codex: there are no slash commands, so the
-operator types `aem approve`, `aem stage` and the rest in their own terminal; there is no timer,
-so idle time is not detected live (gaps show in the report as unobserved); there is no status
-line, toast or pane. Codex runs a hook that fails or cannot start as if it allowed the call
-(fail open), as the plugin does.
+What Codex cannot do here: there are no slash commands, so the operator types `aem approve`,
+`aem stage` and the rest in their own terminal; there is no timer, so idle time is not detected live
+(gaps show in the report as unobserved); there is no status line, toast, pane or dialog. A hook that
+fails or cannot start leaves the call alone, as the plugin does.
 """
 from __future__ import annotations
 
@@ -26,11 +27,10 @@ import json
 import re
 import time
 
-from . import context, guard, ledger, registry, sentinel
+from . import context, ledger, observe, registry, sentinel
 from .util import AemError, aem_home, read_json, write_json_atomic
 
 LONG_TOOL_S = 30.0
-PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.M)
 
 
 def _ctx(reg_path: str | None, cwd: str | None = None):
@@ -47,34 +47,6 @@ def _pending(tool_use_id: str):
 
 def _context_out(event: str, text: str) -> dict:
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
-
-
-def patch_calls(patch: str) -> list[dict]:
-    """The files an apply_patch touches, each as a Write the guard can judge (with its added lines)."""
-    calls = []
-    blocks = re.split(r"(?m)^(?=\*\*\* (?:Add|Update|Delete) File: )", patch or "")
-    for block in blocks:
-        added = "\n".join(l[1:] for l in block.splitlines() if l.startswith("+") and not l.startswith("+++"))
-        for m in PATCH_FILE.finditer(block):
-            path = (m.group(1) or m.group(2) or "").strip()
-            if path:
-                calls.append({"tool": "Write", "input": {"file_path": path, "content": added}})
-    return calls
-
-
-def guard_calls(tool_name: str, tool_input: dict) -> list[dict]:
-    if tool_name == "Bash":
-        return [{"tool": "Bash", "input": {"command": str(tool_input.get("command") or "")}}]
-    if tool_name in ("apply_patch", "Edit", "Write"):
-        return patch_calls(str(tool_input.get("command") or tool_input.get("patch") or tool_input.get("input") or ""))
-    return []  # MCP and other tools are not checked, as in the plugin
-
-
-def deny_text(d: dict) -> str:
-    return (f"AEM denied this call ({d['rule']}, {d['rule_name']}): {d['reason']} How to proceed: {d['how']} "
-            "(In Codex there are no slash commands: the operator runs the matching `aem` command, such as "
-            "`aem approve` or `aem allow`, in their own terminal.) "
-            "Do not try another route to the same effect; tell the operator what was denied.")
 
 
 EVENTS = {  # event: (matcher, timeout in seconds)
@@ -120,7 +92,7 @@ def handle(req: dict, reg_path: str | None = None) -> dict:
 
     if event == "SessionStart":
         if ctx is None:
-            return _context_out(event, context.INACTIVE_TEXT.replace("/aem use", "aem use (in your own terminal)"))
+            return _context_out(event, CODEX_INACTIVE)
         if req.get("source") in (None, "startup", "resume", "clear"):
             auto("session_start", note=req.get("source"))
         text = context.build(ctx)["text"] + CODEX_NOTE
@@ -134,11 +106,12 @@ def handle(req: dict, reg_path: str | None = None) -> dict:
     if event == "PreToolUse":
         tool = str(req.get("tool_name") or "")
         tin = req.get("tool_input") or {}
-        for call in guard_calls(tool, tin if isinstance(tin, dict) else {"command": str(tin)}):
-            d = guard.check(call["tool"], call["input"], cwd, reg_path=reg_path)
-            if d.get("decision") == "deny":
-                return {"hookSpecificOutput": {"hookEventName": event, "permissionDecision": "deny",
-                                               "permissionDecisionReason": deny_text(d)}}
+        tin = tin if isinstance(tin, dict) else {"command": str(tin)}
+        if tool in ("Edit", "Write") and not tin.get("file_path"):
+            tool = "apply_patch"  # Codex reports apply_patch under these names too, with the patch as input
+        if ctx is not None and tool in ("Bash", "apply_patch"):
+            observe.observe({"tool": tool, "input": tin, "cwd": cwd, "session": session, "agent": "codex"},
+                            reg_path=reg_path)
         if tool == "Bash" and ctx is not None:
             write_json_atomic(_pending(req.get("tool_use_id") or ""), {"started_at": time.time(), "tool": tool})
         return {}
@@ -166,15 +139,25 @@ def handle(req: dict, reg_path: str | None = None) -> dict:
 
     if event == "SessionEnd":
         auto("session_end", note=req.get("reason"))
+        if ctx is not None:
+            ledger.close_inferred(ctx, "inferred stage ended with the session")
         return {}
 
     return {}
 
 
+CODEX_INACTIVE = (
+    "# Aavkar Educational Motion Studio (AEM)\n\n"
+    "AEM's hooks are installed but no project is resolved here: the working folder is not a registered project "
+    "and AEM_PROJECT is not set, so AEM records nothing. If the work is for an AEM client, ask the operator to "
+    "start Codex in the project's folder."
+)
+
 CODEX_NOTE = (
-    "\n\nIn Codex: AEM has no slash commands here. Where this text says /approve, /reject, /stage, "
-    "/allow or /client-said, ask the operator to run `aem approve`, `aem reject`, `aem stage`, "
-    "`aem allow` or `aem client-said` in their own terminal."
+    "\n\nIn Codex: AEM has no slash commands here. Where this text names /approve, /reject, /client-said or "
+    "/stage, ask the operator to run `aem approve`, `aem reject`, `aem client-said` or `aem stage` in their own "
+    "terminal. Codex shows no delivery confirmation: run `aem check-approval <render>` before any delivery; AEM "
+    "records every delivery and the approval state of what it names."
 )
 
 

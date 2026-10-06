@@ -1,11 +1,11 @@
 // Calls the aem CLI. Every decision AEM makes is the CLI's; this file only runs it.
-import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } from 'claude-code'
+import type { AskOptions, PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin, RenderSurface } from 'claude-code'
 
-import type { AemAuthority, AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
+import type { AemHeld, AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
 import { sha256Hex } from './sha256'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
-export const PLUGIN_VERSION = '0.9.0'
+export const PLUGIN_VERSION = '1.0.0'
 
 export type Json = { [key: string]: unknown }
 
@@ -17,17 +17,15 @@ export type AemResult = {
 
 export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean; env?: Record<string, string> }
 
-// The aem commands only the operator runs. The CLI refuses them unless the operator is shown to be running
-// them (cli/aem/operator.py); this plugin is how a slash command shows it: a one-time nonce. `authority open`
-// and `close` are the plugin's own, and the CLI takes them only on that nonce, never on a turn authority.
-const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['use', 'stage', 'approve', 'reject', 'client-said', 'allow', 'new-client', 'accept-edit'])
+// The aem commands that write the record, the only ones the operator alone runs. The CLI refuses them unless the
+// operator is shown to be running them (cli/aem/operator.py); this plugin is how a slash command (and the delivery
+// confirmation's Deliver) shows it: a one-time nonce.
+const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['stage', 'approve', 'reject', 'client-said', 'new-client', 'accept-edit'])
 
 export function isOperatorCommand(args: readonly string[]): boolean {
   const [cmd, action] = args
   if (cmd === undefined) return false
-  return OPERATOR_COMMANDS.has(cmd) ||
-    (cmd === 'inbox' && (action === 'accept' || action === 'dismiss')) ||
-    (cmd === 'authority' && (action === 'open' || action === 'close'))
+  return OPERATOR_COMMANDS.has(cmd) || (cmd === 'inbox' && (action === 'accept' || action === 'dismiss'))
 }
 
 export const NONCE_TTL_MS = 60_000
@@ -165,7 +163,7 @@ function elapsed(since: string, nowMs: number): string {
   return `${h}:${String(m).padStart(2, '0')}`
 }
 
-// AEM · client · project · gate · stage time
+// AEM · client · project · gate (inferred) · stage time · stale · ledger edits
 export function statusLine(v: AemView, nowMs: number): string {
   if (v.error) return `AEM · ${v.error.slice(0, 60)}`
   if (!v.active || !v.parts) return 'AEM · no project here · start in its folder or /aem use <client>/<project>'
@@ -175,7 +173,7 @@ export function statusLine(v: AemView, nowMs: number): string {
     let t = elapsed(p.since, nowMs)
     if (p.paused) t += ' paused'
     if (p.waiting) t += ` ${p.waiting.replace(/_/g, ' ')}`
-    bits.push(p.scene ? `${p.gate} ${p.scene}` : p.gate, t)
+    bits.push((p.scene ? `${p.gate} ${p.scene}` : p.gate) + (p.inferred ? ' (inferred)' : ''), t)
   } else {
     bits.push('no gate')
   }
@@ -211,11 +209,14 @@ export type Io = {
   getInbox: () => Promise<AemInbox>
   patchInbox: (fn: (b: AemInbox) => AemInbox) => Promise<void>
   openPane: (id: string, title: string) => Promise<void>
-  // AEM_OPERATOR_TURN in this process's environment, which every Bash call (and every aem call) after
-  // inherits; undefined unsets it.
-  setTurnEnv: (nonce: string | undefined) => Promise<void>
-  getAuthority: () => Promise<AemAuthority>
-  patchAuthority: (fn: (a: AemAuthority) => AemAuthority) => Promise<void>
+  // The engine's own dialog (AskUserQuestion); rejects when dismissed or where no one can be asked.
+  ask: (question: string, options: AskOptions) => Promise<string>
+  // Where the session draws: empty in a plain -p run, where no dialog can be shown.
+  surfaces: () => Promise<readonly RenderSurface[]>
+  // A dim line in the transcript, for the operator only (not sent to the model).
+  log: (text: string) => void
+  getHeld: () => Promise<AemHeld>
+  patchHeld: (fn: (h: AemHeld) => AemHeld) => Promise<void>
 }
 
 // The session pin reaches every aem call as AEM_PROJECT (with AEM_PROJECT_SOURCE saying it is a pin), so the

@@ -1,6 +1,7 @@
 """Aavkar Educational Motion Studio (AEM) command-line core.
 
-Python 3 standard library only. ffprobe and ffmpeg are called for render checks.
+AEM observes and records: it remembers, measures and checks, and never blocks work. Python 3 standard
+library only. ffprobe and ffmpeg are called for render checks.
 """
 
-VERSION = "0.9.0"
+VERSION = "1.0.0"

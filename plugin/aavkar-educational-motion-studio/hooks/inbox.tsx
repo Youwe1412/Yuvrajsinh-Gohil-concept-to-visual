@@ -1,8 +1,7 @@
 // Feature "review inbox" (off unless the reviewInbox setting is on): /inbox opens a pane listing
 // what waits on the operator. `aem inbox` decides what is listed and hands each item the exact aem
-// commands its buttons run (approve, reject, allow, inbox accept/dismiss, with --label so the
-// ruling also lands in the client's labelled cases); the pane only runs them. Reject asks for a
-// reason first.
+// commands its buttons run (approve, reject, inbox accept/dismiss, with --label so the ruling also
+// lands in the client's labelled cases); the pane only runs them. Reject asks for a reason first.
 import type { CommandRunInput, CommandRunResult, ElementTable, PluginOptions } from 'claude-code'
 
 import type { AemInbox, AemInboxAction, AemInboxItem } from '../types'
@@ -17,7 +16,7 @@ export const INBOX_COMMANDS: readonly CommandSpecLite[] = [
 export const EMPTY_INBOX: AemInbox = { items: [], summary: '', reasonFor: null, message: null, busy: false }
 
 // The only commands an inbox button may run: the operator's own.
-const RUNNABLE: ReadonlySet<string> = new Set(['approve', 'reject', 'allow', 'inbox'])
+const RUNNABLE: ReadonlySet<string> = new Set(['approve', 'reject', 'inbox'])
 
 export function inboxOn(options: PluginOptions): boolean {
   return options.reviewInbox === true
@@ -96,7 +95,7 @@ export type InboxHandlers = {
 }
 
 const KIND_NAMES: Record<string, string> = {
-  plan_row: 'Plan row', still: 'Still', render: 'Render', override: 'Guard denial', client_comment: 'Client comment',
+  plan_row: 'Plan row', still: 'Still', render: 'Render', client_comment: 'Client comment',
 }
 
 // The mobile app draws no text field (its table has no Input), so there Reject only says where to go.

@@ -1,13 +1,14 @@
-"""events.jsonl: stage events, automatic session events, and the time report.
+"""events.jsonl: stage events, automatic session events, observed tool calls, and the time report.
 
 Format is the mergetomaster-studio skill's (references/project-ledgers.md), extended:
 
     {"ts": "...+05:30", "gate": "G2", "scene": null, "event": "start", "note": "..."}
 
-The skill's events are start, finish, waiting_on_<who>, blocked. AEM adds pause, resume and
-the automatic events below, plus render_check, approval, rejection, client_said, allow,
-allow_used and denial. Extra fields (source, session, tool, duration_s, backfilled) are
-added after the skill's five. Every line is appended, never rewritten.
+The skill's events are start, finish, waiting_on_<who>, blocked. AEM adds pause, resume, the automatic
+events below, stage_inferred (a gate AEM opened itself because no stage was open when the work changed a
+plan file, a still, a scene source or a render), observed (one per tool call), render_check, approval,
+rejection, client_said, the delivery outcomes and the rest. Extra fields (source, session, tool, duration_s,
+inferred, backfilled) are added after the skill's five. Every line is appended, never rewritten.
 """
 from __future__ import annotations
 
@@ -16,11 +17,14 @@ from . import operator
 from .registry import Context
 from .util import AemError, append_jsonl, fmt_duration, now, parse_ts, read_jsonl, strip_private, ts
 
-STAGE_EVENTS = {"start", "finish", "pause", "resume", "blocked"}
+STAGE_EVENTS = {"start", "stage_inferred", "finish", "pause", "resume", "blocked"}
 AUTO_EVENTS = {
     "session_start", "session_end", "prompt", "turn_start", "turn_end",
     "tool_call", "idle_start", "idle_end",
 }
+# Events the plugin records while a session runs: each shows the session was being recorded at that time.
+ACTIVITY_EVENTS = AUTO_EVENTS | {"observed", "render_check"}
+STARTS = ("start", "stage_inferred")
 
 
 def record(ctx: Context, event: str, *, gate=None, scene=None, note=None, at: str | None = None,
@@ -38,14 +42,6 @@ def record(ctx: Context, event: str, *, gate=None, scene=None, note=None, at: st
     for k, v in extra.items():
         if v is not None:
             rec[k] = v
-    # A record written on the operator's message says so: via "chat", the prompt's id and an excerpt of it.
-    auth = operator.current_authority()
-    if auth is not None:
-        if event not in ("operator_prompt", "operator_turn"):
-            from . import authority
-            authority.ensure_prompt_event(ctx, auth)
-        for k, v in operator.provenance().items():
-            rec.setdefault(k, v)
     append_jsonl(ctx.events_path, rec, track=True, by=extra.get("source"))
     return rec
 
@@ -59,12 +55,16 @@ def _key(ev) -> tuple:
 
 
 def open_stages(events: list[dict]) -> "OrderedDict[tuple, dict]":
-    """(gate, scene) pairs started and not finished, oldest first, with their pause/wait state."""
+    """(gate, scene) pairs started and not finished, oldest first, with their pause/wait state and whether
+    AEM inferred them."""
     opened: OrderedDict = OrderedDict()
     for ev in events:
         e, k = ev.get("event"), _key(ev)
-        if e == "start" and k[0]:
-            opened[k] = {"since": ev["ts"], "paused": False, "waiting": None}
+        if e in STARTS and k[0]:
+            if e == "stage_inferred" and k in opened:
+                continue
+            opened[k] = {"since": ev["ts"], "paused": False, "waiting": None, "inferred": e == "stage_inferred",
+                         "inferred_from": ev.get("inferred_from")}
         elif e == "finish" and k in opened:
             opened.pop(k)
         elif k in opened:
@@ -85,6 +85,15 @@ def current_stage(events: list[dict]) -> tuple | None:
     return next(reversed(opened))
 
 
+def close_inferred(ctx: Context, why: str, *, at=None, events: list[dict] | None = None) -> list[dict]:
+    """Finish every stage AEM inferred that is still open: the operator opened a stage, or the session ended."""
+    out = []
+    for (g, sc), st in open_stages(events if events is not None else read_events(ctx)).items():
+        if st["inferred"]:
+            out.append(record(ctx, "finish", gate=g, scene=sc, note=why, at=at, inferred=True, source="aem stage"))
+    return out
+
+
 def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, extra=None, switch=False) -> dict:
     operator.assert_checked("stage")
     events = read_events(ctx)
@@ -97,8 +106,14 @@ def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, ext
         if gate not in ctx.client.gates:
             raise AemError(f"unknown gate {gate!r}", hint=f"Gates for {ctx.client.id}: {', '.join(ctx.client.gates)}")
         scene = args[1] if len(args) > 1 else None
-        if (gate, scene) in opened:
+        if (gate, scene) in opened and not opened[(gate, scene)]["inferred"]:
             raise AemError(f"{gate}{' · ' + scene if scene else ''} is already open since {opened[(gate, scene)]['since']}")
+        # The operator's stage replaces any AEM inferred: those end now.
+        superseded = close_inferred(ctx, f"superseded by stage start {gate}{' ' + scene if scene else ''}", at=at,
+                                    events=events)
+        if superseded:
+            events = read_events(ctx)
+            opened = open_stages(events)
         closed = None
         if switch:
             # Moving on: the stage open for the same scene (or the whole video) finishes first.
@@ -142,7 +157,10 @@ def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, ext
     if action == "auto":
         if not args or args[0] not in AUTO_EVENTS:
             raise AemError(f"stage auto needs one of: {', '.join(sorted(AUTO_EVENTS))}")
-        return record(ctx, args[0], note=note, at=at, source="aem auto", **extra)
+        rec = record(ctx, args[0], note=note, at=at, source="aem auto", **extra)
+        if args[0] == "session_end":  # an inferred stage lasts as long as the session that inferred it
+            close_inferred(ctx, "inferred stage ended with the session", at=at)
+        return rec
     raise AemError(f"unknown stage action {action!r}", hint="start | end | pause | resume | wait <who> | auto <event>")
 
 
@@ -199,6 +217,7 @@ def build_timeline(events: list[dict], report_time: float, client_ids: set) -> d
         if k in o_pause:
             pauses[k].append((o_pause.pop(k), t))
 
+    inferred = []
     timed = []
     for i, ev in enumerate(events):
         try:
@@ -210,11 +229,14 @@ def build_timeline(events: list[dict], report_time: float, client_ids: set) -> d
         e, k = ev.get("event"), _key(ev)
         if ev.get("backfilled"):
             backfilled += 1
-        if e in AUTO_EVENTS:
+        if e in ACTIVITY_EVENTS:
             last_auto = t
-        if e == "start":
+        if e in STARTS:
             for wk in [w for w in o_wait if w[0] == k[0]]:
                 close_wait(wk, t)
+            if e == "stage_inferred":
+                inferred.append({"ts": ev["ts"], "gate": k[0], "scene": k[1], "from": ev.get("inferred_from"),
+                                 "why": ev.get("note")})
             if k in o_stage:
                 notes.append(f"{ev['ts']}: {k[0]} {k[1] or ''} started twice; kept the first start")
             else:
@@ -296,7 +318,7 @@ def build_timeline(events: list[dict], report_time: float, client_ids: set) -> d
     return {
         "stages": stages, "open": open_flags, "pauses": pauses, "waits": waits,
         "busy": busy, "idle": idle, "sessions": sessions, "notes": notes,
-        "backfilled": backfilled, "client_ids": client_ids,
+        "backfilled": backfilled, "client_ids": client_ids, "inferred": inferred,
     }
 
 
@@ -368,6 +390,7 @@ def report(ctx: Context, *, write: bool = True) -> dict:
         "open_stages": [f"{g} · {s or '(whole video)'}" for g, s in tl["open"]],
         "session_time_outside_stages_s": outside,
         "observed_session_s": _length(in_session),
+        "inferred_stages": tl["inferred"],
         "backfilled_events": tl["backfilled"], "notes": tl["notes"],
     }
     md = render_markdown(ctx, result)
@@ -436,6 +459,11 @@ def render_markdown(ctx: Context, r: dict) -> str:
     if r["open_stages"]:
         L += ["## Open stages", "", "Started and not finished; counted to the report time above:", ""]
         L += [f"- {s}" for s in r["open_stages"]] + [""]
+    if r["inferred_stages"]:
+        L += ["## Inferred stages", "",
+              "No stage was open when the work changed these files, so AEM opened the gate each belongs to itself. "
+              "Each ran until the next /stage or the end of its session. They are counted above like any stage.", ""]
+        L += [f"- {x['ts']}: {x['gate']}, {x['why'] or ('from ' + str(x['from']))}" for x in r["inferred_stages"]] + [""]
     if r["backfilled_events"]:
         L += [f"**{r['backfilled_events']} events were backfilled** (entered with an explicit time, "
               "not recorded live).", ""]
@@ -458,4 +486,5 @@ def stage_time(ctx: Context) -> dict | None:
     st = opened[k]
     secs = now().timestamp() - parse_ts(st["since"]).timestamp()
     return {"gate": k[0], "scene": k[1], "since": st["since"], "elapsed_s": secs,
-            "paused": st["paused"], "waiting": st["waiting"]}
+            "paused": st["paused"], "waiting": st["waiting"], "inferred": st["inferred"],
+            "inferred_from": st["inferred_from"]}

@@ -12,8 +12,9 @@
 # The script refuses a folder that is not such a sandbox, and fails if ~/.aem or
 # registry/clients.json changed while a step ran.
 #
-# The agent's side (editing a protected file, rendering, placing) is done by an agent session
-# with the plugin loaded and the same AEM_HOME, so its guard and sentinel are the ones under test.
+# The agent's side (editing a ledger by hand, rendering, placing) is done by an agent session with
+# the plugin loaded and the same AEM_HOME, so its observation, sentinel and delivery confirmation are
+# the ones under test.
 set -euo pipefail
 STEP="${1:-}"
 SB="${2:-}"

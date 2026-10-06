@@ -4,8 +4,9 @@ The skill's line (references/project-ledgers.md) is kept field for field:
 
     {"gate", "scene", "render", "render_sha256", "source_revision", "approver", "date"}
 
-AEM adds "type" ("approval" when absent, "rejection", "stale"), "ts" and a few context
-fields. "item_kind" says what was reviewed: "render" when absent (the skill's lines), "still" for an
+AEM adds "type" ("approval" when absent, "rejection", "stale"), "ts", "via" (how the operator made it:
+"terminal", "slash command" or "delivery confirmation") and a few context fields. "item_kind" says what was
+reviewed: "render" when absent (the skill's lines), "still" for an
 image at G3, "plan_row" for one row of a plan table at G2 (with "plan_file", "plan_row" and
 "plan_row_sha256"). Approvals, rejections and stale marks only act on lines of the same kind. A line is never rewritten: staleness is a new "stale" line naming the approval's
 SHA-256 and the render that replaced it.
@@ -152,9 +153,17 @@ def last_checked_render(ctx: Context, item: str) -> str | None:
     return None
 
 
+DELIVERY_NOTE = "Deliver pressed in AEM's delivery confirmation: approved as it was being delivered"
+
+
 def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note=None, revision=None,
-            row: str | None = None) -> dict:
+            row: str | None = None, delivery_confirmation: bool = False) -> dict:
     operator.assert_checked("approve")
+    via = "delivery confirmation" if delivery_confirmation else operator.via()
+    if delivery_confirmation:
+        from . import observe
+        gate = gate or observe.delivery_gate(ctx)
+        note = note or DELIVERY_NOTE
     if not path:
         path = last_checked_render(ctx, item)
         if not path:
@@ -178,7 +187,7 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
             "gate": gate, "scene": item, "render": None, "render_sha256": None, "source_revision": None,
             "approver": ctx.client.operator, "date": today(), "type": "approval", "ts": ts(),
             "item_kind": "plan_row", "plan_file": rel_to(p, ctx.project_dir), "plan_row": r["text"],
-            "plan_row_sha256": r["sha256"], **operator.provenance(),
+            "plan_row_sha256": r["sha256"], "via": via,
         }
         if note:
             rec["note"] = note
@@ -193,8 +202,7 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
         "gate": gate, "scene": item, "render": rel_to(p, ctx.project_dir), "render_sha256": sha,
         "source_revision": rev, "approver": ctx.client.operator, "date": today(),
         "type": "approval", "ts": ts(), "source_revision_from": rev_how,
-        "render_check": last_render_check(ctx, sha) if ik == "render" else "not a render",
-        **operator.provenance(),
+        "render_check": last_render_check(ctx, sha) if ik == "render" else "not a render", "via": via,
     }
     if ik != "render":
         rec["item_kind"] = ik
@@ -202,7 +210,8 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
         rec["note"] = note
     append_jsonl(ctx.approvals_path, rec, track=True, by="aem approve")
     ledger.record(ctx, "approval", gate=gate, scene=item, note=note, fill_stage=False,
-                  render=rec["render"], render_sha256=sha, item_kind=rec.get("item_kind"), source="aem approve")
+                  render=rec["render"], render_sha256=sha, item_kind=rec.get("item_kind"), via=via,
+                  source="aem approve")
     return rec
 
 
@@ -232,11 +241,12 @@ def reject(ctx: Context, item: str, reason: str, *, gate=None, path: str | None 
         "scene": item, "render": render, "render_sha256": sha, "source_revision": None,
         "approver": ctx.client.operator, "date": today(), "type": "rejection", "ts": ts(),
         "reason": reason.strip(), **({"item_kind": ik} if ik != "render" else {}), **extra,
-        **operator.provenance(),
+        "via": operator.via(),
     }
     append_jsonl(ctx.approvals_path, rec, track=True, by="aem reject")
     ledger.record(ctx, "rejection", gate=rec["gate"], scene=item, note=reason.strip(), fill_stage=False,
-                  render=render, render_sha256=sha, item_kind=rec.get("item_kind"), source="aem reject")
+                  render=render, render_sha256=sha, item_kind=rec.get("item_kind"), via=operator.via(),
+                  source="aem reject")
     return rec
 
 
@@ -292,10 +302,12 @@ def mark_stale(ctx: Context, item: str, new_sha: str, render_rel: str, reason: s
 
 
 def check(ctx: Context, path: str, *, item: str | None = None, gate: str | None = None) -> dict:
-    """Pass only if this exact file's SHA-256 has a standing approval."""
+    """Pass only if this exact file's SHA-256 has a standing approval. `state` says which: approved, stale (the
+    file changed after its approval, or the approval was marked stale), rejected, none, or missing."""
     p = resolve_path(ctx, path)
     if not p.is_file():
-        raise CheckFailed(f"render not found: {p}", data={"ok": False, "path": str(p), "reason": "missing file"})
+        raise CheckFailed(f"render not found: {p}", data={"ok": False, "path": str(p), "reason": "missing file",
+                                                          "state": "missing"})
     sha = sha256_file(p)
     lines = read(ctx)
     it = item_for(ctx, p, item)
@@ -307,20 +319,30 @@ def check(ctx: Context, path: str, *, item: str | None = None, gate: str | None 
         st = approval_state(lines, a)
         result.update(scene=a.get("scene"), approval={k: a.get(k) for k in ("gate", "scene", "render", "date", "approver")})
         if st["standing"]:
-            result.update(ok=True, reason=f"approved at {a.get('gate')} on {a.get('date')} by {a.get('approver')}")
+            result.update(ok=True, state="approved",
+                          reason=f"approved at {a.get('gate')} on {a.get('date')} by {a.get('approver')}")
             return result
         result["reason"] = f"approval for this render is no longer standing: {st['why']}"
         result["stale"] = True
+        result["state"] = "rejected" if (st["why"] or "").startswith("rejected") else "stale"
     else:
         prev = latest_approval(lines, it, gate.upper() if gate else None)
+        rejected = next((l for l in reversed(lines) if kind(l) == "rejection" and l.get("scene") == it
+                         and item_kind(l) == "render"), None)
         if prev:
             result["reason"] = (f"stale: {it} was approved at {prev.get('gate')} on {prev.get('date')} for "
                                 f"SHA-256 {prev.get('render_sha256', '')[:12]}…, this file is {sha[:12]}…")
             result["stale"] = True
+            result["state"] = "stale"
             result["approved_sha256"] = prev.get("render_sha256")
+        elif rejected and rejected.get("render_sha256") == sha:
+            result["reason"] = f"{it} was rejected on {rejected.get('date')}: {rejected.get('reason')}"
+            result["stale"] = False
+            result["state"] = "rejected"
         else:
             result["reason"] = f"no approval recorded for {it} (SHA-256 {sha[:12]}…)"
             result["stale"] = False
+            result["state"] = "none"
     result["how_to_fix"] = f"Review the render, then type /approve {it} [gate] (or run: aem approve {it} {result['path']} --gate G4)"
     raise CheckFailed(result["reason"], data=result)
 

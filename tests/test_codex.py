@@ -1,4 +1,6 @@
-"""aem codex-hook: Codex hook events (shapes from the Codex hooks reference) answered by AEM's checks."""
+"""aem codex-hook: Codex hook events (shapes from the Codex hooks reference) answered with AEM's record.
+
+The hook keeps context, ledger events and the render sentinel. It never denies a call: PreToolUse only records it."""
 import json
 import time
 import unittest
@@ -25,10 +27,8 @@ class CodexHook(WorldCase):
     def pre(self, tool, tool_input, tid="call-1"):
         return self.hook("PreToolUse", turn_id="t1", tool_name=tool, tool_use_id=tid, tool_input=tool_input)
 
-    def assertDenied(self, out, rule):
-        h = out["hookSpecificOutput"]
-        self.assertEqual((h["hookEventName"], h["permissionDecision"]), ("PreToolUse", "deny"))
-        self.assertIn(f"AEM denied this call ({rule}", h["permissionDecisionReason"])
+    def observed(self):
+        return [e for e in self.w.events() if e["event"] == "observed"]
 
     def test_session_start_gives_context_and_records(self):
         out = self.hook("SessionStart", source="startup")
@@ -38,28 +38,36 @@ class CodexHook(WorldCase):
         ev = self.w.events()[-1]
         self.assertEqual((ev["event"], ev["agent"], ev["session"]), ("session_start", "codex", "codex-s1"))
 
-    def test_bash_denials_match_the_plugin(self):
-        self.assertDenied(self.pre("Bash", {"command": "echo x >> events.jsonl"}), "AEM-G01")
-        self.assertDenied(self.pre("Bash", {"command": "npx hyperframes snapshot --describe ."}), "AEM-G03")
-        self.assertEqual(self.pre("Bash", {"command": "ls renders"}), {})
+    def test_pre_tool_use_never_denies_and_records_the_call(self):
+        for command in ("echo x >> events.jsonl", "npx hyperframes snapshot --describe .", "ls renders",
+                        "cat ~/Tools/fcp-edit-workflow/README.md; ls ~/Tools/fcp-edit-workflow;"):
+            self.assertEqual(self.pre("Bash", {"command": command}), {}, command)
+        obs = self.observed()
+        self.assertEqual([e["command"] for e in obs][:2], ["echo x >> events.jsonl", "npx hyperframes snapshot --describe ."])
+        self.assertEqual((obs[0]["agent"], obs[0]["session"], obs[0]["writes"]), ("codex", "codex-s1", ["events.jsonl"]))
 
-    def test_apply_patch_checks_every_file(self):
+    def test_apply_patch_is_recorded_file_by_file(self):
         patch = ("*** Begin Patch\n*** Update File: notes.md\n@@\n-a\n+b\n"
-                 f"*** Add File: {self.w.ds}/acme-decisions.md\n+forged ruling\n*** End Patch\n")
-        self.assertDenied(self.pre("apply_patch", {"command": patch}), "AEM-G01")
-        ok = "*** Begin Patch\n*** Update File: notes.md\n@@\n-a\n+b\n*** End Patch\n"
-        self.assertEqual(self.pre("apply_patch", {"command": ok}), {})
+                 f"*** Add File: {self.w.ds}/acme-decisions.md\n+a line by hand\n*** End Patch\n")
+        self.assertEqual(self.pre("apply_patch", {"command": patch}), {})
+        ev = self.observed()[-1]
+        self.assertEqual(ev["tool"], "apply_patch")
+        self.assertEqual(ev["writes"][0], "notes.md")
+        self.assertTrue(ev["writes"][1].endswith("acme-decisions.md"))
 
-    def test_fcpxml_patch_needs_approved_media(self):
+    def test_an_unapproved_delivery_is_recorded_not_asked_about(self):
         r = self.w.project / "renders" / "shot_v01.mp4"
         r.write_bytes(b"render")
         patch = f'*** Begin Patch\n*** Add File: out/p.fcpxml\n+<asset src="file://{r}"/>\n*** End Patch\n'
-        self.assertDenied(self.pre("apply_patch", {"command": patch}), "AEM-G05")
+        self.assertEqual(self.pre("apply_patch", {"command": patch}), {})
+        self.assertEqual(self.observed()[-1]["delivery"]["media"][0]["state"], "none")
         self.w.run("approve", "shot", str(r), "--gate", "G4", check=True)
         self.assertEqual(self.pre("apply_patch", {"command": patch}), {})
+        self.assertEqual(self.observed()[-1]["delivery"]["media"][0]["state"], "approved")
 
-    def test_mcp_tools_are_not_checked(self):
+    def test_mcp_tools_are_not_recorded(self):
         self.assertEqual(self.pre("mcp__filesystem__write_file", {"path": str(self.w.project / "events.jsonl")}), {})
+        self.assertEqual(self.observed(), [])
 
     def test_prompt_turn_and_session_end_are_recorded(self):
         self.hook("UserPromptSubmit", turn_id="t9", prompt="render the scene")
@@ -67,6 +75,13 @@ class CodexHook(WorldCase):
         self.hook("SessionEnd", reason="other")
         evs = [(e["event"], e.get("turn")) for e in self.w.events()]
         self.assertEqual(evs, [("prompt", None), ("turn_start", "t9"), ("turn_end", "t9"), ("session_end", None)])
+
+    def test_session_end_ends_a_stage_aem_inferred(self):
+        self.pre("Bash", {"command": "cp a.md shotlist.md"})
+        self.assertEqual([e["event"] for e in self.w.events()], ["stage_inferred", "observed"])
+        self.hook("SessionEnd", reason="other")
+        fin = self.w.events()[-1]
+        self.assertEqual((fin["event"], fin["gate"], fin["inferred"]), ("finish", "G2", True))
 
     @unittest.skipUnless(HAVE_FFMPEG, "ffmpeg and ffprobe are needed")
     def test_render_sentinel_after_bash(self):
@@ -80,6 +95,7 @@ class CodexHook(WorldCase):
         self.assertIn("AEM checked 1 render(s)", text)
         self.assertIn("renders/a_v01.mp4", text)
         self.assertEqual([e["event"] for e in self.w.events()][-1], "render_check")
+        self.assertIn("stage_inferred", [e["event"] for e in self.w.events()])  # no stage was open: G4 inferred
         # The pending start time is consumed.
         self.assertFalse((self.w.home / "codex" / "pending" / "r1.json").exists())
 
@@ -87,6 +103,7 @@ class CodexHook(WorldCase):
         here = {"cwd": str(self.w.tmp)}
         out = self.hook("SessionStart", source="startup", **here)
         self.assertIn("no project is resolved", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("start Codex in the project's folder", out["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(self.hook("PreToolUse", turn_id="t1", tool_name="Bash", tool_use_id="c",
                                    tool_input={"command": "ls"}, **here), {})
         self.assertEqual(self.w.events(), [])  # nothing is recorded without a project

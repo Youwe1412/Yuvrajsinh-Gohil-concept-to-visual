@@ -1,5 +1,5 @@
 // A fake `aem` and engine floor for tests: answers $.process.run beneath the plugin,
-// records every argv, and captures toasts and the status line.
+// records every argv, and captures toasts, the status line, transcript lines and dialogs.
 import { mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
@@ -17,23 +17,29 @@ export type World = {
   toolsRun: string[]
   commands: string[]
   panes: string[]
-  // AEM_OPERATOR_TURN as the plugin set it in the process environment, and every set in order
-  turnEnv: string | undefined
-  envSets: { name: string; value: string | undefined }[]
-  turnEnvAtTool: (string | undefined)[]
+  logs: string[]
+  // Every question put to the operator in the engine's dialog, with its options.
+  asked: { question: string; options: string[] }[]
 }
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
-export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string; env?: Record<string, string>; failWrite?: boolean } = {}): World {
-  const w: World = { calls: [], stdins: [], envs: [], files: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [], turnEnv: undefined, envSets: [], turnEnvAtTool: [] }
+export type FloorOptions = {
+  cannotStart?: boolean
+  toolMs?: Record<string, number>
+  selection?: string
+  env?: Record<string, string>
+  failWrite?: boolean
+  // Where the session draws; [] is a plain -p run, where no dialog can be shown. Default: the terminal.
+  surfaces?: readonly ('terminal' | 'desktop' | 'mobile' | 'vscode')[]
+  // The operator's answer to a dialog: a label, or null to dismiss it.
+  answer?: string | null
+}
+
+export function floor(on: On, route: Router, opts: FloorOptions = {}): World {
+  const w: World = { calls: [], stdins: [], envs: [], files: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [], logs: [], asked: [] }
   mock.env(on, { HOME: '/Users/test', ...opts.env })
   mock.store(on)
-  on('env.set', ($, e) => {
-    w.envSets.push({ name: e.name, value: e.value })
-    if (e.name === 'AEM_OPERATOR_TURN') w.turnEnv = e.value
-    return { value: undefined }
-  })
   on('process.run', ($, e) => {
     w.calls.push([...e.argv])
     w.stdins.push(e.init?.stdin)
@@ -57,6 +63,11 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
     w.statuses.push(e.text)
     return { value: undefined }
   })
+  on('ui.log', ($, e) => {
+    w.logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.surfaces', () => ({ value: opts.surfaces ?? ['terminal'] }))
   on('command.register', ($, e) => {
     w.commands.push(e.name)
     return { value: { command: e.name } }
@@ -74,8 +85,14 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
   on('ui.selection', () => ({ value: opts.selection === undefined ? undefined : { text: opts.selection } }))
   on('session.cwd', () => ({ value: '/projects/P1' }))
   on('tool.call', async ($, e) => {
+    if (e.tool === 'AskUserQuestion') {
+      // The engine's dialog: the operator picks a label, or dismisses it.
+      const q = e.questions[0]
+      w.asked.push({ question: q?.question ?? '', options: (q?.options ?? []).map(o => o.label) })
+      if (opts.answer === null || q === undefined) return { deny: 'The user dismissed the dialog' }
+      return { result: { questions: e.questions, answers: { [q.question]: opts.answer ?? 'Deliver' } } }
+    }
     w.toolsRun.push(String(e.tool))
-    w.turnEnvAtTool.push(w.turnEnv)
     const ms = opts.toolMs?.[String(e.tool)] ?? 0
     if (ms > 0) await w.clock.advance(ms)
     return { result: 'done' }

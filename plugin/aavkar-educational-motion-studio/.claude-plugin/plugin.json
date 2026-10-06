@@ -1,7 +1,7 @@
 {
   "name": "aavkar-educational-motion-studio",
-  "version": "0.9.0",
-  "description": "Aavkar Educational Motion Studio (AEM): session context, time ledger, guards, render sentinel and review inbox for educational animation work. Every decision is made by the aem CLI.",
+  "version": "1.0.0",
+  "description": "Aavkar Educational Motion Studio (AEM): observes and records educational animation work. It remembers (the client's rulings, approvals tied to the exact render, the critic's labelled cases), measures (time per stage) and checks (every render), and never blocks work; it asks once, before a delivery of a render with no current approval. Every decision is made by the aem CLI.",
   "author": {
     "name": "Aavkar Productions"
   },
@@ -16,7 +16,7 @@
     "reviewInbox": {
       "type": "boolean",
       "title": "Review inbox",
-      "description": "Adds /inbox: a pane listing what waits on you (plan rows, stills, renders, guard denials, imported client comments) with approve and reject buttons. Off by default.",
+      "description": "Adds /inbox: a pane listing what waits on you (plan rows, stills, renders, imported client comments) with approve and reject buttons. Off by default.",
       "default": false
     }
   }

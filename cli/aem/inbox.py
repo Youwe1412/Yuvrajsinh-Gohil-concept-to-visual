@@ -5,7 +5,6 @@ Items, each with an id and the exact aem commands its buttons run:
   plan:<file>#<row>   a row of a plan table (shotlist.md by default) with no ruling on its text  G2
   still:<path>        an image under stills/ with no ruling on its SHA-256                       G3
   render:<scene>      the scene's last checked render, unchanged since, with no ruling           G4
-  denial:<line>       a guard denial in events.jsonl the operator has not answered
   comment:<file>#<n>  a client comment imported by aem import-review, not yet ruled on
 
 Approving or rejecting with --label appends one line to the client's critic/labelled-cases.jsonl
@@ -16,18 +15,16 @@ cases (M-19) is unchanged. An accepted client comment keeps the client's words v
 """
 from __future__ import annotations
 
-from datetime import timedelta
 from pathlib import Path
 
 from . import approvals, ledger, operator
 from .registry import Context
-from .util import AemError, append_jsonl, now, parse_ts, read_jsonl, rel_to, sha256_file, today, ts
+from .util import AemError, append_jsonl, now, read_jsonl, rel_to, sha256_file, today
 
 DEFAULTS = {
     "plan_files": ["shotlist.md"],
     "stills_dirs": ["stills"],
     "gates": {"plan_row": "G2", "still": "G3", "render": "G4"},
-    "denial_days": 2,
     "reviews_dir": "reviews",
 }
 RULINGS = ("keep", "change", "remove")
@@ -84,9 +81,6 @@ def append_case(ctx: Context, *, item_kind: str, item: str, ruling: str | None, 
     if inbox_ref:
         case["inbox_ref"] = inbox_ref
     case.update(extra or {})
-    prov = operator.provenance()
-    if prov:
-        case.update(via=prov["via"], prompt_id=prov["prompt_id"])
     append_jsonl(ctx.client.labelled_cases_path, case, track=True, by="aem inbox")
     ledger.record(ctx, "labelled_case", scene=item, gate=gate, note=case["case_id"], fill_stage=False,
                   case_id=case["case_id"], item_kind=item_kind, ruling=ruling, inbox_ref=inbox_ref, source="aem inbox")
@@ -123,7 +117,7 @@ def _decided(lines: list[dict], of_kind: str) -> set:
 
 
 def _resolved_refs(events: list[dict]) -> set:
-    return {e["inbox_ref"] for e in events if e.get("inbox_ref") and e.get("event") in ("inbox_resolved", "allow")}
+    return {e["inbox_ref"] for e in events if e.get("inbox_ref") and e.get("event") == "inbox_resolved"}
 
 
 def items(ctx: Context) -> list[dict]:
@@ -182,26 +176,7 @@ def items(ctx: Context) -> list[dict]:
                          approve=["approve", scene, str(p), "--gate", gates["render"], "--label"],
                          reject=["reject", scene, "--path", str(p), "--gate", gates["render"], "--label"]))
 
-    # Guard denials not yet answered.
     resolved = _resolved_refs(events)
-    since = now() - timedelta(days=float(cfg["denial_days"]))
-    for e in events:
-        if e.get("event") != "denial" or f"denial:{e['_line']}" in resolved:
-            continue
-        try:
-            if parse_ts(e["ts"]) < since:
-                continue
-        except (KeyError, ValueError):
-            continue
-        ref = f"denial:{e['_line']}"
-        target = e.get("rule") or ""
-        out.append(_item(ref, "override", e.get("rule") or "denial", None,
-                         title=f"{e.get('rule')} denied {e.get('tool')}: {(e.get('subject') or '')[:160]}",
-                         detail=e.get("note"),
-                         approve=["allow", target, "--once", "--reason", f"approved in the AEM inbox ({ref})",
-                                  "--inbox-ref", ref, "--label"],
-                         reject=["inbox", "dismiss", ref, "--label"],
-                         approve_label="Allow once"))
 
     # Imported client comments.
     rdir = ctx.project_dir / cfg["reviews_dir"] / ctx.client.id
@@ -241,8 +216,8 @@ def _find(ctx: Context, ref: str) -> dict:
 
 
 def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | None = None) -> dict:
-    operator.assert_checked("inbox accept")
     """Accept an imported client comment as the client's ruling on the shot."""
+    operator.assert_checked("inbox accept")
     if ruling not in RULINGS:
         raise AemError(f"ruling must be one of {', '.join(RULINGS)}")
     it = _find(ctx, ref)
@@ -273,28 +248,20 @@ def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | No
 
 
 def dismiss(ctx: Context, ref: str, reason: str, *, label: bool) -> dict:
+    """Close a client comment without accepting it (a mis-mapped comment, say), with a reason."""
     operator.assert_checked("inbox dismiss")
-    """Close a denial or a client comment without approving it, with a reason."""
     if not reason or not reason.strip():
         raise AemError("dismissing needs a reason")
     it = _find(ctx, ref)
-    if it["kind"] not in ("override", "client_comment"):
+    if it["kind"] != "client_comment":
         raise AemError(f"{ref} is a {it['kind']}; reject it with the command its item lists")
     case = None
     if label:
-        extra = {"shot": None, "rule": it["item"]} if it["kind"] == "override" else {}
         case = append_case(ctx, item_kind=it["kind"], item=it["item"], ruling=None, reason=reason,
-                           decision="dismissed", inbox_ref=ref, extra=extra)
-    ev = ledger.record(ctx, "inbox_resolved", scene=None if it["kind"] == "override" else it["item"],
-                       note=reason.strip(), fill_stage=False, inbox_ref=ref, decision="dismissed",
-                       case_id=(case or {}).get("case_id"), source="aem inbox dismiss")
+                           decision="dismissed", inbox_ref=ref)
+    ev = ledger.record(ctx, "inbox_resolved", scene=it["item"], note=reason.strip(), fill_stage=False, inbox_ref=ref,
+                       decision="dismissed", case_id=(case or {}).get("case_id"), source="aem inbox dismiss")
     return {"ok": True, "id": ref, "decision": "dismissed", "event": ev, "case": case}
-
-
-def label_allow(ctx: Context, allow: dict, ref: str | None) -> dict:
-    return append_case(ctx, item_kind="override", item=allow["target"], ruling=None, reason=allow["reason"],
-                       decision="allowed once" if allow["once"] else "allowed", inbox_ref=ref,
-                       extra={"shot": None, "rule": allow["target"]})
 
 
 def summary_line(its: list[dict]) -> str:
@@ -303,6 +270,5 @@ def summary_line(its: list[dict]) -> str:
     counts: dict[str, int] = {}
     for i in its:
         counts[i["kind"]] = counts.get(i["kind"], 0) + 1
-    names = {"plan_row": "plan row", "still": "still", "render": "render", "override": "denial",
-             "client_comment": "client comment"}
+    names = {"plan_row": "plan row", "still": "still", "render": "render", "client_comment": "client comment"}
     return f"{len(its)} waiting: " + ", ".join(f"{n} {names[k]}{'s' if n > 1 else ''}" for k, n in counts.items())

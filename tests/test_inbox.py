@@ -101,27 +101,6 @@ class Inbox(WorldCase):
         self.w.run("check-render", str(p))
         self.assertIn("render:scene", self.items())
 
-    def test_denials(self):
-        self.w.run("guard", stdin=json.dumps({"tool": "Bash", "input": {"command": "npx hyperframes snapshot --describe ."},
-                                              "cwd": str(self.w.project)}))
-        self.w.run("guard", stdin=json.dumps({"tool": "Read", "input": {"file_path": "/Volumes/Other/x.md"},
-                                              "cwd": str(self.w.project)}))
-        its = [i for i in self.items().values() if i["kind"] == "override"]
-        self.assertEqual([i["item"] for i in its], ["AEM-G03", "AEM-G02"])
-        self.assertEqual([a["label"] for a in its[0]["actions"]], ["Allow once", "Reject"])
-        d = self.press(its[0], "Allow once")
-        self.assertTrue(d["once"])
-        self.press(its[1], "Reject", reason="not needed for this client")
-        self.assertEqual([i for i in self.items().values() if i["kind"] == "override"], [])
-        cases = self.cases()
-        self.assertEqual([(c["item_kind"], c["decision"], c["ruling"]) for c in cases],
-                         [("override", "allowed once", None), ("override", "dismissed", None)])
-        self.assertEqual([(c["shot"], c["rule"]) for c in cases], [(None, "AEM-G03"), (None, "AEM-G02")])
-        # The one-time allow now lets the blocked command through once.
-        code, g = self.w.run("guard", stdin=json.dumps({"tool": "Bash", "input": {"command": "npx hyperframes snapshot --describe ."},
-                                                         "cwd": str(self.w.project)}))
-        self.assertEqual((code, g["decision"]), (0, "allow"))
-
     def test_client_comments(self):
         shutil.copy(FIX / "edit.json", self.w.project / "data" / "edit.json")
         (self.w.project / "data" / "words.json").write_text(json.dumps(WORDS))
@@ -151,10 +130,10 @@ class Inbox(WorldCase):
         self.assertEqual(self.cases()[-1]["decision"], "dismissed")
 
     def test_dismiss_needs_reason_and_ids_must_exist(self):
-        code, d = self.w.run("inbox", "dismiss", "denial:99", "--reason", "x")
+        code, d = self.w.run("inbox", "dismiss", "comment:none.jsonl#9", "--reason", "x")
         self.assertEqual(code, 2)
         self.assertIn("nothing waiting", d["error"])
-        code, d = self.w.run("inbox", "dismiss", "denial:99")
+        code, d = self.w.run("inbox", "dismiss", "comment:none.jsonl#9")
         self.assertEqual(code, 2)
         self.assertIn("needs a reason", d["error"])
 

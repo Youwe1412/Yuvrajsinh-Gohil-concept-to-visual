@@ -33,18 +33,6 @@
   "waiting_on_client_ids": [
     "{{CLIENT_ID}}"
   ],
-  "protected_files": {
-    "design_system": [
-      "{{CLIENT_ID}}-decisions.md",
-      "rules.md",
-      "critic/labelled-cases.jsonl"
-    ],
-    "project": [
-      "approvals.jsonl",
-      "events.jsonl"
-    ]
-  },
-  "blocked_commands": [],
   "approval_gates": {
     "command_patterns": [
       "\\bfcpxml\\b",
@@ -83,6 +71,5 @@
       "renders"
     ]
   },
-  "audio_libraries": [],
   "idle_minutes": 10
 }

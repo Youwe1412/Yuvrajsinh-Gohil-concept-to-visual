@@ -1,110 +1,82 @@
-"""The session context the Claude Code plugin adds to the system prompt, built from the registry.
+"""The session context the Claude Code plugin adds to the system prompt: the principle, the project, three
+rules for the agent, and `aem recall` for the client.
 
-The plugin only inserts this text; what it says is decided here, so a plain `aem context`
-shows exactly what the agent is told.
+The plugin only inserts this text; what it says is decided here, so a plain `aem context` shows exactly what
+the agent is told.
 """
 from __future__ import annotations
 
-import re
-
-from . import integrity, ledger
+from . import integrity, ledger, recall
 from .registry import Context
 
-OPERATOR_COMMANDS = ("approve", "reject", "client-said", "allow", "stage", "use", "new-client", "accept-edit")
+# The first principle, as ABOUT.md states it, with the client's name from the registry.
+PRINCIPLE = ("AEM observes and records. It never blocks work in a session the operator is sitting in. The record is "
+             "the product: rulings in {contact}'s own words, approvals tied to the exact render, the critic's labelled "
+             "cases, time per stage. The only interruption is a confirmation before delivering a render that has no "
+             "current approval.")
+
+# The commands that write the record: the agent asks the operator to run them.
+ASK_FOR = "`/approve <item>`, `/reject <item> <reason>`, `/client-said <scope> <their exact words>`, `/stage <gate> [scene]`"
+OPEN = ("`aem status`, `aem recall`, `aem check-render`, `aem check-approval`, `aem report`, `aem integrity`, "
+        "`aem drift`, `aem inbox` and `aem import-review`")
 
 
-def preferences(ctx: Context) -> list[dict]:
-    """The client's stated preferences: rows of the rules file whose ID has the client's prefix."""
-    prefix = ctx.client.raw.get("preference_prefix")
-    if not prefix or not ctx.client.rules_path.exists():
-        return []
-    rows = []
-    for line in ctx.client.rules_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) >= 2 and re.fullmatch(re.escape(prefix) + r"-\d{2,}", cells[0]):
-            row = {"id": cells[0], "rule": cells[1]}
-            if len(cells) >= 5:
-                row.update(kind=cells[2], status=cells[4])
-            rows.append(row)
-    return rows
+def record_files(ctx: Context) -> list[str]:
+    return [str(p) for p in integrity.tracked_files(ctx)]
 
 
-def protected_paths(ctx: Context) -> list[str]:
-    p = ctx.client.protected
-    out = [str(ctx.client.design_system / f) for f in p["design_system"]]
-    if ctx.project_dir:
-        out += [str(ctx.project_dir / f) for f in p["project"]]
-    return out
+def _record_line(ctx: Context) -> str:
+    c = ctx.client
+    ds = [p.relative_to(c.design_system).as_posix() for p in (c.decisions_path, c.labelled_cases_path)]
+    return (f"- The record: `events.jsonl` and `approvals.jsonl` in the project folder; `{ds[0]}` and `{ds[1]}` in the "
+            f"design system, `{c.design_system}`. Only `aem` writes it: read these files whenever you need to, and "
+            "never write them yourself, with any tool.")
 
 
 def build(ctx: Context) -> dict:
     c = ctx.client
+    first = (c.contact.split() or [c.id])[0]
+    op = c.operator
     st = ledger.stage_time(ctx) if ctx.project_dir else None
-    gate = (f"{st['gate']} ({c.gates.get(st['gate'], '')})" + (f" · scene {st['scene']}" if st["scene"] else "")
-            if st else "none open (the operator starts one with /stage <gate> [scene])")
+    if st:
+        gate = f"{st['gate']} ({c.gates.get(st['gate'], '')})" + (f" · scene {st['scene']}" if st["scene"] else "")
+        if st.get("inferred"):
+            gate += f", inferred by AEM ({st.get('inferred_from')} changed while no stage was open)"
+    else:
+        gate = "none open (AEM infers one from the first plan file, still, scene source or render you change)"
     fps = f"{ctx.fps.numerator}/{ctx.fps.denominator} (from {ctx.fps_source})" if ctx.fps else "unknown"
-    prefs = preferences(ctx)
     lines = [
         "# Aavkar Educational Motion Studio (AEM)",
         "",
-        f"AEM is loaded in this session. The project was resolved from {ctx.resolution.source} "
-        f"({ctx.resolution.detail}); do not change it yourself.",
+        PRINCIPLE.format(contact=first),
         "",
-        f"- Client: {c.name} (id `{c.id}`, contact {c.contact})",
-        f"- Project: {ctx.project} at `{ctx.project_dir}`",
-        f"- Gate: {gate}",
-        f"- Frame rate: {fps}. Use this exact rational for every frame conversion; never assume a rate.",
-        f"- Design system: `{c.design_system}`",
-        f"- Read first: `{c.decisions_path}` (the client's own words and rulings), then `{c.rules_path}`.",
-    ]
-    if c.skill:
-        lines.append(f"- Skill: use `{c.skill}` for this client's work.")
-    lines.append("- Protected files (only the operator's commands write them):")
-    lines += [f"  - `{p}`" for p in protected_paths(ctx)]
-    if prefs:
-        lines.append(f"- {c.contact}'s stated preferences (the {c.raw.get('preference_prefix')}- rows of "
-                     f"{c.raw['rules_file']}; cite the ID):")
-        for r in prefs:
-            lines.append(f"  - {r['id']}: {r['rule']}" + (f" ({r['kind']}; {r['status']})" if r.get("kind") else ""))
-    lines += [
-        "",
-        "While this plugin is loaded:",
-        "- The operator decides. AEM allows whatever the operator asks for in chat; its guard and commands exist "
-        "only to stop you acting on your own authority. A turn that began with the operator's own message carries "
-        "that authority (AEM_OPERATOR_TURN is set in your shell). A turn that did not (autonomous, a loop, a "
-        "schedule) does not, and then AEM's guard and the commands' own checks apply.",
-        "- Run `aem " + "`, `aem ".join(OPERATOR_COMMANDS) + "`, `aem inbox accept` or `aem inbox dismiss` only when "
-        "the operator's latest message asks for that action (\"approve\", \"reject\", \"record what "
-        f"{c.contact.split()[0] if c.contact else 'the client'} said\", \"start G2\"). An earlier message is never standing "
-        "permission. After each one, say what was recorded (the command's output names it). For `client-said` the "
-        "quote must appear verbatim in the operator's message; if it does not, ask the operator to paste the "
-        "client's exact words. Never run them on your own initiative.",
-        "- Do not write events.jsonl, approvals.jsonl, the client's decisions file, the rules file or "
-        "critic/labelled-cases.jsonl by hand. Use the commands: /stage, /pause, /resume, /wait, /approve, /reject, "
-        "/client-said, /allow. Read them with the Read tool, not the shell. If the operator explicitly asks for a "
-        "hand edit, make it and tell them: AEM logs it (`allowed_by_operator_prompt`), `aem integrity` flags the "
-        "line, and `aem accept-edit` accepts it when they say so.",
-        "- You may always run `aem status`, `aem inbox` (to list what waits on the operator), `aem check-render`, "
-        "`aem check-approval`, `aem drift`, `aem report`, `aem integrity` and `aem import-review`.",
-        "- Before placing or delivering a render, `aem check-approval <path>` must pass.",
-        "- After a render command finishes, AEM checks each new render (`aem check-render`) and tells you the "
-        "result. A render that fails is not ready to show the operator. Renders run in the background are not "
-        "checked automatically: run `aem check-render <path>` on each when they finish.",
-        "- A tool call AEM denies says why and how the operator can approve or override it. Do not try "
-        "another route to the same effect; tell the operator what was denied.",
-        "- These are recorded checks, not security boundaries.",
+        f"- Project: {ctx.project} ({c.id}) at `{ctx.project_dir}`, resolved from {ctx.resolution.source}. "
+        f"Gate: {gate}. Frame rate: {fps}; use this exact rational for every frame conversion, never an assumed rate."
+        + (f" Skill: `{c.skill}`." if c.skill else ""),
+        _record_line(ctx),
+        f"- When an approval, a rejection, {first}'s words or a stage change is needed, ask {op} in one sentence, "
+        f"naming the command ({ASK_FOR}), and carry on once {op} has run it. Those commands refuse an agent with one "
+        "line; there is no other way to run them.",
+        f"- Everything else is yours: {OPEN}. Every tool call is recorded with the files it names, and every render is "
+        "checked when its command finishes (the result follows the command's output). Check approvals before a "
+        f"delivery (`aem check-approval <render>`): delivering media with no current approval asks {op} first, and "
+        "a delivery they stop stays stopped until they say otherwise.",
     ]
     integ = integrity.summary(ctx) if ctx.project_dir else {"findings": 0}
     if integ["findings"]:
         lines.append(f"- AEM integrity: {integ['findings']} ledger difference(s) in {', '.join(integ['files'])} were not "
-                     "written by AEM (`aem integrity` lists them). Tell the operator; only they accept them (`aem accept-edit`).")
-    return {"active": True, "text": "\n".join(lines), "preferences": prefs, "protected": protected_paths(ctx),
-            "skill": c.skill, "decisions_file": str(c.decisions_path), "gate": st["gate"] if st else None}
+                     f"written by AEM (`aem integrity` lists them). Tell {op}; only {op} accepts them (`/accept-edit`).")
+    rec = recall.recall(c)
+    lines += ["", rec["text"]]
+    return {"active": True, "text": "\n".join(lines), "preferences": rec["preferences"], "recall": rec,
+            "record_files": record_files(ctx), "skill": c.skill, "decisions_file": str(c.decisions_path),
+            "gate": st["gate"] if st else None}
 
 
 INACTIVE_TEXT = (
     "# Aavkar Educational Motion Studio (AEM)\n\n"
     "AEM is loaded but no project is resolved here: the working folder is not a registered project and no "
-    "project is pinned to this session. If the work is for an AEM client, ask the operator to start the session "
-    "in the project's folder or to run /aem use <client>/<project>. Never run `aem use` yourself."
+    "project is pinned to this session, so AEM records nothing. If the work is for an AEM client, ask the operator "
+    "to start the session in the project's folder or to pin it with /aem use <client>/<project> (`aem use` in a "
+    "shell does not pin a session)."
 )

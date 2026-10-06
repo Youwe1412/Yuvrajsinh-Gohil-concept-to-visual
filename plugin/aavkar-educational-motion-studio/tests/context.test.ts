@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { COMPOSER, INACTIVE, PRESENTATION, START, active, floor } from './fake-aem'
+import { COMPOSER, INACTIVE, PARTS, PRESENTATION, START, active, floor } from './fake-aem'
+
+const PARTS_G2 = { ...PARTS, gate: 'G2' }
 
 const COMPOSE = { model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as const
 
@@ -9,15 +11,18 @@ describe('context', () => {
     const w = floor(on, INACTIVE)
     on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' as const }] }))
     await $.session.start(START)
-    expect(w.toasts).toContain('AEM 0.9.0 · no project (folder not registered)')
+    expect(w.toasts).toContain('AEM 1.0.0 · no project (folder not registered)')
     expect(w.statuses.at(-1)).toBe('AEM · no project here · start in its folder or /aem use <client>/<project>')
     expect(w.calls.some(c => c[1] === 'drift')).toBe(false)
+    expect(w.calls.some(c => c[1] === 'recall')).toBe(false)
+    expect(w.logs).toEqual([])
     const composed = await $.prompt.compose(COMPOSE)
     expect(composed.sections.at(-1)).toEqual({ id: 'aavkar-educational-motion-studio:context', text: 'AEM inactive text', scope: 'session' })
   })
 
-  test('active project: status line, prompt section from aem context, drift toasts', async ($, on) => {
+  test('active project: status line, prompt section from aem context, the recall in the transcript, drift toasts', async ($, on) => {
     const w = floor(on, active({
+      recall: { json: { ok: true, text: 'AEM recall · MergeToMaster (joel) · Joel Belton\nStanding preferences: …' } },
       drift: { code: 1, json: { ok: false, findings: [
         { check: 'skill', file: 'SKILL.md', problem: 'installed copy differs from the master' },
         { check: 'text-export', file: 'text/Motion.md', problem: 'page changed since the export' },
@@ -27,10 +32,12 @@ describe('context', () => {
     await $.session.start(START)
     expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:05')
     // Every session starts with one toast naming the version, the project and how it was resolved.
-    expect(w.toasts[0]).toBe('AEM 0.9.0 · joel/P1 · resolved from folder')
+    expect(w.toasts[0]).toBe('AEM 1.0.0 · joel/P1 · resolved from folder')
     expect(w.toasts).toContain('AEM drift [skill] SKILL.md installed copy differs from the master')
     expect(w.toasts).toContain('AEM drift [text-export] text/Motion.md page changed since the export')
-    expect(w.calls.map(c => c[1])).toEqual(expect.arrayContaining(['status', 'context', 'drift']))
+    expect(w.calls.map(c => c[1])).toEqual(expect.arrayContaining(['status', 'context', 'recall', 'drift']))
+    // The operator sees at session start what the agent was given about the client.
+    expect(w.logs).toEqual(['AEM recall · MergeToMaster (joel) · Joel Belton\nStanding preferences: …'])
     expect(w.calls.every(c => c.at(-1) === '--json')).toBe(true)
     const composed = await $.prompt.compose(COMPOSE)
     expect(composed.sections[0]?.id).toBe('intro')
@@ -38,6 +45,21 @@ describe('context', () => {
     // A second render does not add the section twice.
     const again = await $.prompt.compose(COMPOSE)
     expect(again.sections.filter(s => s.id === 'aavkar-educational-motion-studio:context')).toHaveLength(1)
+  })
+
+  test('a stage AEM inferred says so on the status line', async ($, on) => {
+    const w = floor(on, active({ status: { json: { ok: true, active: true, client: 'joel', project: 'P1',
+      statusline_parts: { ...PARTS_G2, inferred: true, integrity: 2 } } } }))
+    await $.session.start(START)
+    expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G2 (inferred) · 0:05 · 2 ledger edits to review')
+  })
+
+  test('/aem recall prints the CLI text', async ($, on) => {
+    const w = floor(on, active({ recall: { text: 'AEM recall · Acme' } }))
+    await $.session.start(START)
+    const out = await $.command.run({ command: 'aem', args: 'recall acme', origin: COMPOSER, presentation: PRESENTATION })
+    expect(out.text).toBe('AEM recall · Acme')
+    expect(w.calls).toContainEqual(['aem', 'recall', 'acme'])
   })
 
   test('stage time ticks on the status line', async ($, on) => {

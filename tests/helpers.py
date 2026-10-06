@@ -59,7 +59,7 @@ Rules for this file:
 
 > "Keep it calm."
 
-| What he said | Scope |
+| What they said | Scope |
 |---|---|
 | Calm | Channel |
 """
@@ -128,10 +128,7 @@ class World:
                 "skill": "acme-studio", "skill_master": "Skill/acme-studio",
                 "gates": {"G1": "Inputs", "G2": "Plan", "G3": "Stills", "G4": "Rough render",
                           "G5": "Critique", "G6": "Deliver", "G7": "Client review"},
-                "waiting_on_client_ids": ["acme", "ada"],
-                "protected_files": {"design_system": ["acme-decisions.md", "rules.md", "critic/labelled-cases.jsonl"],
-                                    "project": ["approvals.jsonl", "events.jsonl"]},
-                "blocked_commands": ["snapshot --describe"], "idle_minutes": 10,
+                "waiting_on_client_ids": ["acme", "ada"], "idle_minutes": 10,
             }],
         }, indent=2), encoding="utf-8")
         self.env = {**os.environ, "AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry), "AEM_SANDBOX": "1"}
@@ -242,6 +239,91 @@ class World:
 
     def cleanup(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+JOEL_DECISIONS = """# Joel's decisions
+
+Joel Belton's own words, requests and rulings for MergeToMaster, newest first.
+
+---
+
+## 2026-10-05 · P2 (Claude Code video) · WhatsApp
+
+> "Could you leave the color grading as is on this one I think its a bit more natural"
+
+> "I'll add some more broll to frameio of various parks"
+
+| What he said | Scope |
+|---|---|
+| Leave the grade | Video (P2) |
+
+---
+
+## 2026-09-23 · P1 (Frontend Design) published
+
+The film went live with the 14 September fixes below.
+Approved for publication.
+
+---
+
+## Before P1 · Joel's video brief (Notion)
+
+| Joel's words | Scope | Applied as |
+|---|---|---|
+| AI imagery or AI video: "It's too obvious." | Channel | J-01 |
+| "add music where appropriate but nothing too distracting" | Channel | J-03 |
+
+---
+
+## Open questions for Joel
+
+- Why did you ask for the three P1 changes?
+- Is "leave the grade as is" for every video,
+  or for P2?
+"""
+
+JOEL_RULES = """# MergeToMaster rules index
+
+## Joel's stated preferences
+
+| ID | Rule | Kind | Tags | Status | Source |
+|---|---|---|---|---|---|
+| J-01 | Prefer no AI imagery or AI video | Joel default | J | Joel stated | Brief |
+| J-03 | Music where appropriate, never distracting | Joel default | J | Joel stated | Brief |
+"""
+
+
+class JoelWorld(World):
+    """Joel's real registry entry (a sandbox copy: approval gates, render scripts, review settings as they are),
+    with a small design system and P2 folder inside the sandbox. For replaying what happened in a real session."""
+
+    def __init__(self):
+        self.sb = isolation.sandbox(prefix="aem-joel-")
+        reg = json.loads(self.sb.registry.read_text(encoding="utf-8"))
+        joel = next(c for c in reg["clients"] if c["id"] == "joel")
+        self.tmp = self.sb.root
+        self.home = self.sb.home
+        self.registry = self.sb.registry
+        self.root = Path(joel["projects_root"])
+        self.ds = Path(joel["design_system"])
+        self.project = self.root / joel["projects"]["P2"]["dir"]
+        self.skills = self.tmp / "skills"
+        for d in (self.ds / "critic", self.project / "renders", self.project / "XML", self.skills):
+            d.mkdir(parents=True, exist_ok=True)
+        (self.ds / "joel-decisions.md").write_text(JOEL_DECISIONS, encoding="utf-8")
+        (self.ds / "rules.md").write_text(JOEL_RULES, encoding="utf-8")
+        header = {"_comment": "MergeToMaster critic labelled cases.", "fields": {**LABELLED_HEADER["fields"]}}
+        header["fields"]["joel_words"] = header["fields"].pop("acme_words")
+        (self.ds / "critic" / "labelled-cases.jsonl").write_text(
+            json.dumps(header) + "\n" + json.dumps({"case_id": "P1-x", "status": "development case"}) + "\n",
+            encoding="utf-8")
+        (self.project / "aem.project.json").write_text(json.dumps({"fps": "25/1"}), encoding="utf-8")
+        self.env = {**os.environ, **self.sb.env}
+        for name in ("AEM_FIXED_NOW", "AEM_PROJECT", "AEM_PROJECT_SOURCE", "AEM_OPERATOR_NONCE"):
+            self.env.pop(name, None)
+
+    def cleanup(self):
+        self.sb.cleanup()
 
 
 def make_video(path: Path, *, frames: int = 50, fps: str = "25", size: str = "320x180", box: str | None = None,

@@ -1,7 +1,8 @@
-"""The client registry, the active project and the context every command works in.
+"""The client registry, the project a command resolves, and the context every command works in.
 
-Nothing client-specific lives in code: names, paths, protected files, blocked commands,
-gates and idle time all come from registry/clients.json.
+Nothing client-specific lives in code: names, paths, gates, approval and delivery patterns, render
+scripts, review settings and idle time all come from registry/clients.json. (Since 1.0.0 nothing reads
+an entry's protected_files, blocked_commands, shared_paths or audio_libraries: they belonged to the guard.)
 """
 from __future__ import annotations
 
@@ -102,15 +103,6 @@ class Client:
     @property
     def idle_minutes(self) -> float:
         return float(self.raw.get("idle_minutes", 10))
-
-    @property
-    def protected(self) -> dict:
-        p = self.raw.get("protected_files") or {}
-        return {"design_system": list(p.get("design_system", [])), "project": list(p.get("project", []))}
-
-    @property
-    def blocked_commands(self) -> list:
-        return list(self.raw.get("blocked_commands", []))
 
     @property
     def waiting_ids(self) -> set:

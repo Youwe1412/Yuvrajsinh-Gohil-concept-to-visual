@@ -229,7 +229,7 @@ class ClientSaid(WorldCase):
         self.assertEqual(code, 0, d)
         after = (self.w.ds / "acme-decisions.md").read_text()
         self.assertIn("> Could you leave the colour grade as is?\n> It's \"a bit more natural\" — thanks |pipes| *stars*", after)
-        self.assertIn("entered by Yuvraj", after)
+        self.assertIn("typed by Yuvraj with /client-said in Claude Code (`aem client-said`)", after)
         self.assertLess(after.index("Frame.io"), after.index("## 2026-09-01"))
         # Every earlier line is still there, in order.
         new_block_start = after.index("\n## ") + 1
@@ -245,29 +245,6 @@ class ClientSaid(WorldCase):
         self.assertEqual(self.w.run("client-said", "--scope", "instance", "--source", "x", stdin="hi")[0], 2)
         code, _ = self.w.run("client-said", "--scope", "instance", "--item", "shot", "--source", "x", stdin="hi")
         self.assertEqual(code, 0)
-
-
-class Allow(WorldCase):
-    def setUp(self):
-        super().setUp()
-        self.w.use()
-
-    def test_once_standing_list_revoke(self):
-        _, a = self.w.run("allow", "snapshot --describe", "--reason", "one look", "--once", check=True)
-        _, b = self.w.run("allow", "AEM-G02", "--reason", "read a shared asset", check=True)
-        _, l = self.w.run("allow", "--list", check=True)
-        self.assertEqual({x["allow_id"] for x in l["allows"]}, {a["allow_id"], b["allow_id"]})
-        from aem import clients, registry
-        import argparse
-        with self.w.environ():
-            ctx = registry.context(argparse.Namespace(), cwd=self.w.project)
-            clients.consume_allow(ctx, a["allow_id"], subject="hyperframes snapshot --describe")
-        _, l = self.w.run("allow", "--list", check=True)
-        self.assertEqual([x["allow_id"] for x in l["allows"]], [b["allow_id"]])
-        self.w.run("allow", "--revoke", b["allow_id"], check=True)
-        _, l = self.w.run("allow", "--list", check=True)
-        self.assertEqual(l["allows"], [])
-        self.assertEqual(self.w.run("allow", "x")[0], 2)  # no reason
 
 
 class Drift(WorldCase):
@@ -304,6 +281,38 @@ class Drift(WorldCase):
         self.assertEqual([f["rule_id"] for f in d["findings"] if f["check"] == "rule-ids"], ["M-99"])
 
 
+class Doctor(WorldCase):
+    def doctor(self, versions):
+        claude = self.w.tmp / "claude"
+        (claude / "plugins").mkdir(parents=True, exist_ok=True)
+        if versions is not None:
+            entries = [{"scope": "user", "version": v} for v in versions]
+            (claude / "plugins" / "installed_plugins.json").write_text(json.dumps(
+                {"version": 2, "plugins": {"aavkar-educational-motion-studio@aavkar-productions": entries}}))
+        return self.w.run("doctor", operator=False, env={"AEM_CLAUDE_DIR": str(claude)})
+
+    def test_every_check_named_and_the_plugin_version_matched(self):
+        from aem import VERSION
+        code, d = self.doctor([VERSION])
+        names = [c["check"] for c in d["checks"]]
+        self.assertEqual(names, ["aem", "ffmpeg", "registry", "project", "plugin", "nonces", "integrity", "drift"])
+        plugin = next(c for c in d["checks"] if c["check"] == "plugin")
+        self.assertEqual(plugin["status"], "ok", plugin)
+        self.assertIn("acme/P1", next(c for c in d["checks"] if c["check"] == "project")["detail"])
+
+    def test_an_older_plugin_fails_and_says_what_to_do(self):
+        code, d = self.doctor(["0.9.0"])
+        self.assertEqual(code, 1)
+        plugin = next(c for c in d["checks"] if c["check"] == "plugin")
+        self.assertEqual(plugin["status"], "fail")
+        self.assertIn("update the plugin", plugin["detail"])
+
+    def test_no_plugin_is_a_warning_and_doctor_writes_nothing(self):
+        code, d = self.doctor(None)
+        self.assertEqual(next(c for c in d["checks"] if c["check"] == "plugin")["status"], "warn")
+        self.assertEqual(self.w.events(), [])
+
+
 class NewClient(WorldCase):
     def test_scaffold_and_register(self):
         ds = self.w.tmp / "Beta" / "00 - Beta Design System"
@@ -318,7 +327,8 @@ class NewClient(WorldCase):
         reg = json.loads(self.w.registry.read_text())
         entry = [c for c in reg["clients"] if c["id"] == "beta"][0]
         self.assertEqual(entry["decisions_file"], "beta-decisions.md")
-        self.assertEqual(entry["protected_files"]["design_system"][0], "beta-decisions.md")
+        self.assertEqual(entry["labelled_cases_file"], "critic/labelled-cases.jsonl")
+        self.assertNotIn("protected_files", entry)  # nothing reads it since 1.0.0
         self.assertEqual(self.w.run("new-client", "beta", "--name", "B", "--design-system", str(self.w.tmp / "x"),
                                     "--projects-root", str(self.w.tmp), "--registry", str(self.w.registry))[0], 2)
         self.assertEqual(self.w.run("new-client", "gamma", "--name", "G", "--design-system", str(ds),
@@ -338,13 +348,13 @@ class RealRegistry(unittest.TestCase):
         self.assertEqual(joel.raw["decisions_file"], "joel-decisions.md")
         self.assertEqual(joel.skill, "mergetomaster-studio")
         self.assertEqual(joel.idle_minutes, 10)
-        self.assertIn("snapshot --describe", joel.blocked_commands)
+        self.assertIn("Animations Done", joel.raw["approval_gates"]["command_patterns"])  # a delivery folder
+        self.assertEqual(joel.raw["preference_prefix"], "J")
         self.assertEqual(joel.raw["review_inbox"]["service"], "Frame.io")
         # P2 is registered in the same shape as P1: a folder under the projects root, and a note.
         for name, folder in (("P1", "P1 - Frontend Design/Animations using Hyperframes/MergeToMaster"), ("P2", "P2 - Claude Code")):
             self.assertEqual(set(joel.raw["projects"][name]), {"dir", "note"})
             self.assertEqual(joel.raw["projects"][name]["dir"], folder)
-        self.assertTrue(joel.raw["audio_libraries"])
         self.assertEqual(str(joel.projects_root), str(joel.design_system.parent))
         template = json.loads((REPO / "registry" / "client-template" / "client.json").read_text())
         self.assertLessEqual(set(template) - {"projects"}, set(joel.raw) | {"projects"})
@@ -357,7 +367,7 @@ class JsonEverywhere(WorldCase):
         cmds = [
             ("status",), ("stage", "start", "G1"), ("report", "--no-write"),
             ("approve", "a", "renders/a.mp4", "--gate", "G4"), ("reject", "a", "--reason", "r"),
-            ("allow", "--list",), ("check-approval", "renders/a.mp4"), ("drift", "--skills-dir", str(self.w.skills)),
+            ("recall",), ("integrity",), ("check-approval", "renders/a.mp4"), ("drift", "--skills-dir", str(self.w.skills)),
         ]
         for c in cmds:
             code, d = self.w.run(*c)
@@ -369,37 +379,13 @@ if __name__ == "__main__":
 
 
 class ContextText(WorldCase):
-    def test_inactive(self):
-        code, d = self.w.run("context", cwd=self.w.tmp)
-        self.assertEqual(code, 0)
-        self.assertFalse(d["active"])
-        self.assertIn("/aem use", d["text"])
-
-    def test_active_section(self):
-        self.w.use()
-        self.w.run("stage", "start", "G2", check=True)
-        _, d = self.w.run("context", check=True)
-        t = d["text"]
-        self.assertIn("Client: Acme Learning (id `acme`, contact Ada)", t)
-        self.assertIn("Gate: G2 (Plan)", t)
-        self.assertIn("Frame rate: 24000/1001 (from frame.md)", t)
-        self.assertIn(str(self.w.ds / "acme-decisions.md"), t)
-        self.assertIn("Skill: use `acme-studio`", t)
-        self.assertIn(str(self.w.project / "approvals.jsonl"), t)
-        self.assertEqual([p["id"] for p in d["preferences"]], ["A-01", "A-02"])
-        self.assertIn("Do not write events.jsonl, approvals.jsonl", t)
-        self.assertIn("`aem approve`", t)
-        # 0.9.0: the operator decides; the agent runs an operator command only when the latest message asks for it.
-        self.assertIn("only when the operator's latest message asks for that action", t)
-        self.assertIn("An earlier message is never standing permission", t)
-        self.assertIn("record what Ada said", t)
-
     def test_status_parts(self):
         self.w.use()
         self.w.run("stage", "start", "G4", "shot", check=True)
         _, d = self.w.run("status", check=True)
         p = d["statusline_parts"]
-        self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"]), ("Acme Learning", "P1", "G4", "shot", 0))
+        self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"], p["inferred"]),
+                         ("Acme Learning", "P1", "G4", "shot", 0, False))
 
 
 class LedgerPhase3(WorldCase):

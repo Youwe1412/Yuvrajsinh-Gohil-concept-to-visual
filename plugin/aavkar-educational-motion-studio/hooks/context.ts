@@ -1,5 +1,5 @@
-// Feature "context": the active project in the system prompt and the status line,
-// drift toasts at session start, and /aem use | status | new-client.
+// Feature "context": the principle, the project and the client's recall in the system prompt; the status line;
+// at session start a toast, the recall in the transcript and drift toasts; /aem use | status | recall | new-client.
 import type { CommandRunInput, CommandRunResult, PluginOptions, PromptComposeSection } from 'claude-code'
 
 import { cli, errorOf, isOperator, refresh, refusedText, splitArgs, startToast, statusLine } from './aem'
@@ -8,7 +8,7 @@ import type { CommandSpecLite, Io } from './aem'
 export const SECTION_ID = 'aavkar-educational-motion-studio:context'
 
 export const CONTEXT_COMMANDS: readonly CommandSpecLite[] = [
-  { name: 'aem', description: 'Aavkar Educational Motion Studio: use, status, new-client', argumentHint: 'use <client>/<project> | use --clear | status | new-client <id>' },
+  { name: 'aem', description: 'Aavkar Educational Motion Studio: use, status, recall, new-client', argumentHint: 'use <client>/<project> | use --clear | status | recall [client] | new-client <id>' },
 ]
 
 const HELP = [
@@ -16,6 +16,7 @@ const HELP = [
   '  /aem use <client>/<project>   pin a project to THIS session (nothing global is written)',
   '  /aem use --clear              drop the pin; the session goes back to resolving from its folder',
   '  /aem status                   the project, how it was resolved, gate, approvals',
+  "  /aem recall [client]          the client's preferences, last rulings, open questions, labelled cases",
   '  /aem new-client <id> --name NAME --design-system DIR --projects-root DIR [--contact NAME]',
 ].join('\n')
 
@@ -39,7 +40,11 @@ export async function contextStart(io: Io, options: PluginOptions): Promise<void
   const { view } = await refresh(io, options)
   // Always shown, so no toast means the plugin is not loaded in this session.
   io.toast(startToast(view), 10_000)
-  if (view.active && !view.error) await toastDrift(io, options)
+  if (view.error || !view.client) return
+  // The client's recall, for the operator to see what the agent was given (the prompt section carries it too).
+  const recall = await cli(io, options, ['recall'])
+  if (recall.code === 0 && typeof recall.data.text === 'string') io.log(recall.data.text)
+  if (view.active) await toastDrift(io, options)
 }
 
 // Every 30 s: stage time ticks locally; every sixth tick the CLI is read again for outside changes.
@@ -95,6 +100,10 @@ export async function contextCommand(io: Io, options: PluginOptions, e: CommandR
     }
     await refresh(io, options)
     return { text: r.text || `aem ${sub} exited ${r.code}` }
+  }
+  if (sub === 'recall') {
+    const r = await cli(io, options, ['recall', ...args.slice(1, 2)], { json: false })
+    return { text: r.text }
   }
   if (sub === 'status' || sub === undefined) {
     const r = await cli(io, options, ['status'], { json: false })

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Acceptance-test stand-in for a placement step: writes a minimal FCPXML that lists the given
 renders as assets on a 24000/1001 timeline. It is not Joel's placement tool (that follows the
-skill's references/fcpxml-delivery.md); it only gives AEM-G05 a real command to judge.
+skill's references/fcpxml-delivery.md); it only gives AEM's delivery confirmation a real command to ask about.
 
     python3 bin/place.py --fcpxml out/placement.fcpxml renders/<master>.mp4 [...]
 """

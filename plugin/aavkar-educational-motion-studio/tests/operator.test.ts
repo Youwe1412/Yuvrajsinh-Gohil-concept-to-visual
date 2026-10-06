@@ -3,9 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import { sha256Hex } from '../hooks/sha256'
 import { COMPOSER, PRESENTATION, START, active, floor } from './fake-aem'
 
-// Phase 2 (0.8.0): the CLI refuses operator-only commands unless the operator is shown to be running them.
-// This plugin shows it with a one-time nonce: a random value passed to the one aem call, of which only the
-// SHA-256 is written, with a 60-second expiry. The nonce is never written, logged or shown.
+// The CLI refuses the commands that write the record unless the operator is shown to be running them. This plugin
+// shows it with a one-time nonce: a random value passed to the one aem call, of which only the SHA-256 is written,
+// with a 60-second expiry. The nonce is never written, logged or shown.
 
 const ascii = (s: string): Uint8Array => Uint8Array.from(s, c => c.charCodeAt(0))
 const sha256 = (s: string): string => sha256Hex(ascii(s))
@@ -64,9 +64,11 @@ describe('operator nonce', () => {
     w.files.length = 0
     w.calls.length = 0
     w.envs.length = 0
-    await $.tool.call({ tool: 'Read', file_path: '/x' }) // aem guard
+    await $.tool.call({ tool: 'Read', file_path: '/x' }) // aem observe
     await $.command.run({ command: 'aem', args: 'status', origin: COMPOSER, presentation: PRESENTATION })
-    expect(w.calls.some(c => c[1] === 'guard')).toBe(true)
+    await $.command.run({ command: 'aem', args: 'recall', origin: COMPOSER, presentation: PRESENTATION })
+    expect(w.calls.some(c => c[1] === 'observe')).toBe(true)
+    expect(w.calls.some(c => c[1] === 'recall')).toBe(true)
     expect(w.calls.some(c => c[1] === 'status')).toBe(true)
     expect(w.envs.every(e => e?.AEM_OPERATOR_NONCE === undefined)).toBe(true)
     expect(w.files).toHaveLength(0)

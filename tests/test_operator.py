@@ -1,9 +1,9 @@
-"""Phase 2 (0.8.0): operator-only commands are refused by the CLI itself, not by matching shell text.
+"""Operator-only commands: the commands that write the record are refused by the CLI itself, not by matching
+shell text, unless the operator is running them (their terminal, or a slash command's one-time nonce).
 
-Regressions from 6 October 2026: the old guard matched the text of a command, so a commit message or a
-heredoc that mentioned `aem approve` was denied (test_guard covers those), while the same command spelled
-another way (a script, a wrapper, python -m) was not the guard's to see. Now the command refuses at its
-entry, whatever the spelling, unless the operator is shown to be running it.
+These are the only commands the agent cannot run (1.0.0): approve, reject, client-said, stage, accept-edit,
+new-client, inbox accept and dismiss. The refusal is one line, and the agent asks the operator. Everything else,
+`aem use` included, is open.
 """
 import json
 import os
@@ -19,13 +19,12 @@ from helpers import AEM, REPO, WorldCase
 from aem import operator
 
 OPERATOR_COMMANDS = [
-    ("use", "acme/P1"),
     ("stage", "start", "G1"),
     ("stage", "auto", "prompt"),
     ("approve", "x"),
     ("reject", "x", "--reason", "r"),
     ("client-said", "--scope", "video", "--source", "email"),
-    ("allow", "AEM-G02", "--reason", "r"),
+    ("accept-edit",),
     ("new-client", "beta", "--name", "Beta", "--design-system", "/nonexistent/ds", "--projects-root", "/nonexistent"),
     ("inbox", "accept", "x", "--ruling", "keep"),
     ("inbox", "dismiss", "x", "--reason", "r"),
@@ -36,10 +35,27 @@ class Refused(WorldCase):
     def assertRefused(self, code, d, why=None):
         self.assertEqual(code, 2, d)
         self.assertTrue(d.get("operator_only"), d)
-        self.assertIn("operator's command", d["error"])
-        self.assertIn("ask the operator", d["hint"])
+        self.assertIn("is the operator's command", d["error"])
+        self.assertTrue(d["error"].endswith("ask the operator to run it."), d["error"])
+        self.assertNotIn("hint", d)
         if why:
             self.assertIn(why, d["error"])
+
+    def test_the_list_is_exactly_the_commands_that_write_the_record(self):
+        self.assertEqual(sorted(operator.OPERATOR_COMMANDS),
+                         ["accept-edit", "approve", "client-said", "new-client", "reject", "stage"])
+        self.assertEqual(operator.OPERATOR_INBOX_ACTIONS, ("accept", "dismiss"))
+        for open_ in ("use", "status", "observe", "recall", "rendered", "integrity", "report", "check-approval"):
+            self.assertIsNone(operator.command_name(open_), open_)
+
+    def test_the_refusal_is_one_line(self):
+        p = self.w.run_raw("approve", "x", operator=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertEqual(p.stdout, "")
+        lines = p.stderr.strip().splitlines()
+        self.assertEqual(len(lines), 1, p.stderr)
+        self.assertTrue(lines[0].startswith("aem: `aem approve` is the operator's command"), lines[0])
+        self.assertTrue(lines[0].endswith("ask the operator to run it."), lines[0])
 
     def test_every_operator_command_is_refused_from_a_non_terminal_without_a_nonce(self):
         for args in OPERATOR_COMMANDS:
@@ -87,10 +103,13 @@ class Refused(WorldCase):
 
     def test_open_commands_need_no_operator(self):
         for args, stdin in ((("status",), None), (("context",), None), (("report", "--no-write"), None),
-                            (("check-approval", "renders/none.mp4"), None), (("inbox",), None),
-                            (("guard",), json.dumps({"tool": "Read", "input": {"file_path": str(self.w.project / "a")}}))):
+                            (("check-approval", "renders/none.mp4"), None), (("inbox",), None), (("recall",), None),
+                            (("use", "acme/P1"), None),
+                            (("observe",), json.dumps({"tool": "Read", "input": {"file_path": str(self.w.project / "a")},
+                                                       "cwd": str(self.w.project)}))):
             code, d = self.w.run(*args, stdin=stdin, operator=False)
             self.assertNotIn("operator_only", d, args)
+            self.assertEqual(code, 0 if args[0] != "check-approval" else 1, (args, d))
 
     def test_a_refusal_does_not_leak_or_consume_anything_else(self):
         nonce = "feedface" * 8
@@ -103,6 +122,20 @@ class Refused(WorldCase):
 class Nonce(WorldCase):
     def run_with(self, nonce, *args):
         return self.w.run(*args, operator=False, env={"AEM_OPERATOR_NONCE": nonce})
+
+    def test_a_record_written_on_a_nonce_says_it_came_from_a_slash_command(self):
+        (self.w.project / "renders" / "x_v01.mp4").write_bytes(b"x")
+        code, d = self.run_with(self.w.make_nonce(), "approve", "x", "renders/x_v01.mp4", "--gate", "G4")
+        self.assertEqual(code, 0, d)
+        self.assertEqual(self.w.approvals()[-1]["via"], "slash command")
+
+    def test_a_record_of_an_older_plugin_is_not_a_one_time_nonce(self):
+        n = self.w.make_nonce()
+        f = self.w.home / "nonces" / operator.nonce_hash(n)
+        f.write_text(json.dumps({"kind": "turn", "expires_at": time.time() + 600}))
+        code, d = self.run_with(n, "stage", "start", "G1")
+        self.assertEqual(code, 2)
+        self.assertIn("not a one-time operator nonce", d["error"])
 
     def test_a_valid_nonce_works_once_and_not_twice(self):
         n = self.w.make_nonce()
@@ -178,12 +211,18 @@ class Terminal(WorldCase):
         code, out = self.w.run_tty("stage", "start", "G1")
         self.assertEqual(code, 0, out)
         self.assertEqual(self.w.events()[-1]["event"], "start")
+        (self.w.project / "renders" / "x_v01.mp4").write_bytes(b"x")
+        code, out = self.w.run_tty("approve", "x", "renders/x_v01.mp4")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.w.approvals()[-1]["via"], "terminal")
 
     def test_client_said_reads_the_quote_typed_into_the_terminal(self):
         code, out = self.w.run_tty("client-said", "--scope", "video", "--source", "Frame.io",
                                    keyboard="Keep it calm.\n\x04")
         self.assertEqual(code, 0, out)
-        self.assertIn("> Keep it calm.", (self.w.ds / "acme-decisions.md").read_text())
+        text = (self.w.ds / "acme-decisions.md").read_text()
+        self.assertIn("> Keep it calm.", text)
+        self.assertIn("typed by Yuvraj in a terminal (`aem client-said`)", text)  # who typed it
 
     def test_a_terminal_under_an_agent_is_refused_even_though_it_has_a_tty(self):
         # An agent's shell can allocate a pty (script, Python's pty): stdin and stdout are then a terminal and

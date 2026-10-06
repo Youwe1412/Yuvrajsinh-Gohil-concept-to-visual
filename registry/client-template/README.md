@@ -26,11 +26,13 @@ Agents read the Markdown text versions of the Brand and Motion pages in `text/`,
 
 ## With AEM
 
-- `aem use {{CLIENT_ID}}/<project>` makes a project active; the Claude Code plugin then loads this
-  folder's paths, the decisions file and the skill into the session.
-- Protected files (`{{CLIENT_ID}}-decisions.md`, `rules.md`, `critic/labelled-cases.jsonl`, and each
-  project's `approvals.jsonl` and `events.jsonl`) are written by the operator's commands, not by an
-  agent. These are recorded checks inside Claude Code, not security boundaries.
+- A session started in a project's folder (registered under `projects` in AEM's registry) records
+  into that project; `/aem use {{CLIENT_ID}}/<project>` pins one to a session started elsewhere. At
+  the start of each session the agent is given `aem recall`: the client's stated preferences, the last
+  five rulings in their words, the open questions and the labelled-case count.
+- The record (`{{CLIENT_ID}}-decisions.md`, `critic/labelled-cases.jsonl`, and each project's
+  `approvals.jsonl` and `events.jsonl`) is written only by the operator's `aem` commands. AEM never
+  blocks an edit; `aem integrity` flags any line it did not write until the operator accepts it.
 
 ## Starting a new project
 
@@ -38,7 +40,8 @@ Agents read the Markdown text versions of the Brand and Motion pages in `text/`,
 2. Read the client's brief and `{{CLIENT_ID}}-decisions.md`. Record the edit's exact frame rate as
    a rational in the project's `aem.project.json` (`"fps": "24000/1001"`), or export the edit's
    FCPXML into the project.
-3. `aem use {{CLIENT_ID}}/<project>`, then work through the gates G1 to G7.
+3. Register the project in AEM's registry, start Claude Code in its folder, then work through the
+   gates G1 to G7.
 
 ## Changing the system
 

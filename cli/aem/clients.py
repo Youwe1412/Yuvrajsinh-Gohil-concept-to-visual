@@ -1,4 +1,4 @@
-"""Client-level records: what the client said, operator overrides, and new clients."""
+"""Client-level records: what the client said, and new clients."""
 from __future__ import annotations
 
 import json
@@ -15,24 +15,15 @@ SCOPES = ("channel", "video", "instance")
 
 # --- client-said -----------------------------------------------------------------------
 
+HOW_TYPED = {"terminal": "in a terminal", "slash command": "with /client-said in Claude Code"}
+
+
 def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str | None = None) -> dict:
+    """Add a dated entry to the client's decisions file: the quote exactly as typed, and who typed it."""
     operator.assert_checked("client-said")
-    """Add a dated, verbatim entry to the client's decisions file, marked as entered by the operator."""
     quote = quote.rstrip("\n")
     if not quote.strip():
         raise AemError("no quote on standard input", hint="Paste the client's exact words, then end input.")
-    auth = operator.current_authority()
-    if auth is not None:
-        # On the operator's message the client's words must be in that message: they stay the client's words,
-        # pasted by the operator, never the agent's reading of them.
-        if quote not in auth.prompt_text:
-            quote = quote.strip()
-        if quote not in auth.prompt_text:
-            first = (ctx.client.contact.split() or [ctx.client.id])[0]
-            raise AemError(f"paste {first}'s exact words in your message",
-                           hint=f"On the operator's message, the quote must appear verbatim in that message. "
-                                f"Ask the operator to paste {ctx.client.contact}'s words into the chat, then quote them exactly.",
-                           data={"quote_not_in_prompt": True})
     scopes = ctx.client.raw.get("decision_scopes", SCOPES)
     if scope not in scopes:
         raise AemError(f"scope must be one of {', '.join(scopes)}")
@@ -45,6 +36,7 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
     scope_text = {"channel": "channel (every video)",
                   "video": f"video ({ctx.project})" if ctx.project else "video",
                   "instance": f"instance ({ctx.project} · {item})"}.get(scope, scope)
+    how = (" " + HOW_TYPED[operator.via()]) if operator.via() in HOW_TYPED else ""
     quoted = [("> " + line) if line else ">" for line in quote.split("\n")]
     heading = f"## {today()} · {ctx.project or ctx.client.name} · {source}"
     entry = [
@@ -52,8 +44,7 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
         *quoted, "",
         "| Scope | Source | Entered |",
         "|---|---|---|",
-        f"| {scope_text} | {source} | entered by {ctx.client.operator} with `aem client-said`"
-        + (f" on their chat message ({auth.prompt_id})" if auth is not None else "") + f", {when} |",
+        f"| {scope_text} | {source} | typed by {ctx.client.operator}{how} (`aem client-said`), {when} |",
         "",
         "Our reading: not yet written. Quote copied verbatim from what was pasted.",
     ]
@@ -81,52 +72,10 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
         raise AemError(f"{path} did not read back as written; check it by hand")
     integrity.note_insert(path, original, at, block, by="aem client-said")
     ledger.record(ctx, "client_said", note=f"{scope} · {source}", fill_stage=True,
-                  quote_sha256=sha256_text(quote), decisions_file=str(path), source="aem client-said")
+                  quote_sha256=sha256_text(quote), decisions_file=str(path), typed_by=ctx.client.operator,
+                  via=operator.via(), source="aem client-said")
     return {"ok": True, "file": str(path), "placed": placed, "heading": heading, "scope": scope,
-            "quote_sha256": sha256_text(quote), "entered_by": ctx.client.operator}
-
-
-# --- allow -------------------------------------------------------------------------------
-
-def _allow_id(target: str, when: str) -> str:
-    return "allow-" + sha256_text(target + when)[:8]
-
-
-def allow(ctx: Context, target: str, reason: str, *, once: bool, inbox_ref: str | None = None) -> dict:
-    operator.assert_checked("allow")
-    if not reason or not reason.strip():
-        raise AemError("an override needs a reason")
-    when = ts()
-    aid = _allow_id(target, when)
-    rec = ledger.record(ctx, "allow", note=reason.strip(), target=target, allow_id=aid,
-                        once=bool(once), granted_by=ctx.client.operator, inbox_ref=inbox_ref, source="aem allow")
-    return {"ok": True, "allow_id": aid, "target": target, "once": bool(once), "reason": reason.strip(), "ts": rec["ts"]}
-
-
-def revoke(ctx: Context, allow_id: str) -> dict:
-    operator.assert_checked("allow --revoke")
-    if allow_id not in {a["allow_id"] for a in active_allows(ctx)}:
-        raise AemError(f"no active allow {allow_id!r}")
-    ledger.record(ctx, "allow_revoked", note=None, allow_id=allow_id, source="aem allow --revoke")
-    return {"ok": True, "revoked": allow_id}
-
-
-def active_allows(ctx: Context) -> list[dict]:
-    """Allows not yet consumed (one-time) or revoked."""
-    out = {}
-    for ev in ledger.read_events(ctx):
-        e = ev.get("event")
-        if e == "allow":
-            out[ev["allow_id"]] = {"allow_id": ev["allow_id"], "target": ev.get("target"), "once": ev.get("once", False),
-                                   "reason": ev.get("note"), "ts": ev.get("ts")}
-        elif e == "allow_revoked" or (e == "allow_used" and out.get(ev.get("allow_id"), {}).get("once")):
-            out.pop(ev.get("allow_id"), None)
-    return list(out.values())
-
-
-def consume_allow(ctx: Context, allow_id: str, *, subject: str, rule: str | None = None) -> dict:
-    ledger.record(ctx, "allow_used", note=subject[:500], allow_id=allow_id, rule=rule, source="aem guard")
-    return {"allow_id": allow_id, "subject": subject}
+            "quote_sha256": sha256_text(quote), "entered_by": ctx.client.operator, "via": operator.via()}
 
 
 # --- new-client --------------------------------------------------------------------------

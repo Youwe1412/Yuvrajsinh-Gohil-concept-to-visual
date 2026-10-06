@@ -20,6 +20,7 @@ class Rendered(WorldCase):
         reg["clients"][0]["render_sentinel"] = {"command_patterns": [r"(?:^|[\s;&|/])bin/r\.sh\b"]}
         self.w.registry.write_text(json.dumps(reg))
         self.w.use()
+        self.w.run("stage", "start", "G4", check=True)  # a stage is open, so nothing is inferred (see the last test)
         self.renders = self.w.project / "renders"
 
     def rendered(self, command, started_at=None, **extra):
@@ -100,3 +101,14 @@ class Rendered(WorldCase):
         make_video(out, frames=20)
         d = self.rendered(f"hyperframes render . -o '{out}'", start)
         self.assertEqual([o["path"] for o in d["outputs"]], ["exports/d_v01.mp4"])
+
+    def test_a_render_with_no_stage_open_infers_the_render_gate(self):
+        self.w.run("stage", "end", check=True)
+        start = time.time() - 1
+        make_video(self.renders / "e_v01.mp4", frames=20)
+        d = self.rendered("hyperframes render . -o renders/e_v01.mp4", start)
+        self.assertEqual((d["inferred"]["gate"], d["inferred"]["inferred_from"]), ("G4", "renders/e_v01.mp4"))
+        self.assertEqual(d["toast"], "AEM render check PASS: e_v01.mp4 · G4 inferred (no stage was open)")
+        self.assertEqual(self.checks()[-1]["gate"], "G4")  # the check is recorded at the inferred gate
+        d = self.rendered("hyperframes render . -o renders/e_v01.mp4", start)  # a stage is open now: nothing more
+        self.assertIsNone(d["inferred"])

@@ -1,5 +1,8 @@
 // Aavkar Educational Motion Studio (AEM): one plugin, one hooks module.
 //
+// AEM observes and records. It never blocks work in a session the operator is sitting in; the only
+// interruption is a confirmation before delivering a render that has no current approval (observe.ts).
+//
 // The engine takes one hook per event per module (without a matcher) and follows `$` only
 // inside the file that holds it. So this file owns every `on(...)`, builds an `io` of
 // closures over the hook's `$`, and hands it to the features, which never see `$`.
@@ -9,9 +12,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { EMPTY_LEDGER, EMPTY_VIEW } from './aem'
 import type { Io } from './aem'
-import { EMPTY_AUTHORITY, authorityAfterTool, authorityDropped, authorityPrompt, authorityStart, authorityTurnComplete, authorityTurnStart, closeAuthority } from './authority'
 import { CONTEXT_COMMANDS, contextCommand, contextCompose, contextStart, contextTick } from './context'
-import { GUARD_COMMANDS, guardCall, guardCommand } from './guard'
 import { EMPTY_INBOX, INBOX_COMMANDS, INBOX_PANE, cancelReason, drawInbox, inboxCommand, inboxOn, loadInbox, pressAction, submitReason } from './inbox'
 import {
   LEDGER_COMMANDS,
@@ -24,13 +25,15 @@ import {
   ledgerTurnComplete,
   ledgerTurnStart,
 } from './ledger'
+import { observeCall } from './observe'
+import { RECORD_COMMANDS, recordCommand } from './record'
 import { sentinelAfter, sentinelBefore } from './sentinel'
 
 const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as const, EMPTY_VIEW)
 const ledger = atom({ plugin: 'aavkar-educational-motion-studio', key: 'ledger' } as const, EMPTY_LEDGER)
 const inbox = atom({ plugin: 'aavkar-educational-motion-studio', key: 'inbox' } as const, EMPTY_INBOX)
 const pin = atom({ plugin: 'aavkar-educational-motion-studio', key: 'pin' } as const, null as string | null)
-const authority = atom({ plugin: 'aavkar-educational-motion-studio', key: 'authority' } as const, EMPTY_AUTHORITY)
+const held = atom({ plugin: 'aavkar-educational-motion-studio', key: 'held' } as const, [] as string[])
 
 const TICK_MS = 30_000
 
@@ -68,12 +71,12 @@ function io($: EngineInterface): Io {
     openPane: async (id, title) => {
       await $.ui.open({ id, title })
     },
-    setTurnEnv: async nonce => {
-      await $.env.set('AEM_OPERATOR_TURN', nonce)
-    },
-    getAuthority: () => read($, authority),
-    patchAuthority: async fn => {
-      await update($, authority, fn)
+    ask: (question, options) => $.ui.ask(question, options),
+    surfaces: () => $.session.surfaces(),
+    log: text => $.ui.log(text),
+    getHeld: () => read($, held),
+    patchHeld: async fn => {
+      await update($, held, fn)
     },
   }
 }
@@ -82,9 +85,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const x = io($)
-    const commands = [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...GUARD_COMMANDS, ...(inboxOn(options) ? INBOX_COMMANDS : [])]
+    const commands = [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...RECORD_COMMANDS, ...(inboxOn(options) ? INBOX_COMMANDS : [])]
     for (const c of commands) await x.registerCommand(c)
-    await authorityStart(x)
     await contextStart(x, options)
     await ledgerStart(x, options)
     let tick = 0
@@ -100,9 +102,7 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
-    const x = io($)
-    await closeAuthority(x, options)
-    await ledgerEnd(x, options, e)
+    await ledgerEnd(io($), options, e)
     return next(e)
   })
 
@@ -112,38 +112,31 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const x = io($)
-    await ledgerPrompt(x, options, e.origin)
-    await authorityPrompt(x, options, e)
-    const entered = await next(e)
-    if (entered.drop !== undefined) await authorityDropped(x)
-    return entered
+    await ledgerPrompt(io($), options, e.origin)
+    return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
-    const x = io($)
-    await authorityTurnStart(x, options, e.turnId, e.text)
-    await ledgerTurnStart(x, options, e.turnId)
+    await ledgerTurnStart(io($), options, e.turnId)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    const x = io($)
-    await ledgerTurnComplete(x, options, e)
-    await authorityTurnComplete(x, options, e)
+    await ledgerTurnComplete(io($), options, e)
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     const x = io($)
-    const verdict = await guardCall(x, options, String(e.tool), e as unknown as Record<string, unknown>)
-    if ('deny' in verdict) return { deny: verdict.deny }
+    const tool = String(e.tool)
+    // Recorded before it runs. The one refusal: a delivery of unapproved media the operator stopped.
+    const verdict = await observeCall(x, options, tool, e as unknown as Record<string, unknown>)
+    if (verdict.deny !== undefined) return { deny: verdict.deny }
     const startedAt = await $.clock.now()
-    const watching = await sentinelBefore(x, String(e.tool))
+    const watching = await sentinelBefore(x, tool)
     const ran = await next(e)
-    await ledgerToolDone(x, options, String(e.tool), startedAt, await $.clock.now())
+    await ledgerToolDone(x, options, tool, startedAt, await $.clock.now())
     if ('deny' in ran && ran.deny !== undefined) return ran
-    await authorityAfterTool(x, options, String(e.tool))
     const note = await sentinelAfter(x, options, e as unknown as Record<string, unknown>, watching, ran.isError === true)
     if (note === undefined || ran.isError === true) return ran
     return { ...ran, context: [...(ran.context ?? []), note] }
@@ -155,8 +148,8 @@ export const register: Register = (on, options) => {
   for (const c of LEDGER_COMMANDS) {
     on('command.run', { command: c.name }, async ($, e) => ledgerCommand(io($), options, e))
   }
-  for (const c of GUARD_COMMANDS) {
-    on('command.run', { command: c.name }, async ($, e) => guardCommand(io($), options, e))
+  for (const c of RECORD_COMMANDS) {
+    on('command.run', { command: c.name }, async ($, e) => recordCommand(io($), options, e))
   }
   if (!inboxOn(options)) return
   for (const c of INBOX_COMMANDS) {
