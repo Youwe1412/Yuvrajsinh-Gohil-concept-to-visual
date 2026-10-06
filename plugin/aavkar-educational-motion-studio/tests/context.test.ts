@@ -5,13 +5,12 @@ import { COMPOSER, INACTIVE, PRESENTATION, START, active, floor } from './fake-a
 const COMPOSE = { model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as const
 
 describe('context', () => {
-  test('no active project: toast, status line and the inactive prompt section', async ($, on) => {
+  test('no project resolved: the start toast says so, the status line and the inactive prompt section', async ($, on) => {
     const w = floor(on, INACTIVE)
     on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' as const }] }))
     await $.session.start(START)
-    expect(w.toasts.some(t => t.includes('no active project'))).toBe(true)
-    expect(w.toasts.some(t => t.includes('/aem use'))).toBe(true)
-    expect(w.statuses.at(-1)).toBe('AEM · no active project · /aem use <client>/<project>')
+    expect(w.toasts).toContain('AEM 0.8.0 · no project (folder not registered)')
+    expect(w.statuses.at(-1)).toBe('AEM · no project here · start in its folder or /aem use <client>/<project>')
     expect(w.calls.some(c => c[1] === 'drift')).toBe(false)
     const composed = await $.prompt.compose(COMPOSE)
     expect(composed.sections.at(-1)).toEqual({ id: 'aavkar-educational-motion-studio:context', text: 'AEM inactive text', scope: 'session' })
@@ -27,6 +26,8 @@ describe('context', () => {
     on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' as const }] }))
     await $.session.start(START)
     expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:05')
+    // Every session starts with one toast naming the version, the project and how it was resolved.
+    expect(w.toasts[0]).toBe('AEM 0.8.0 · joel/P1 · resolved from folder')
     expect(w.toasts).toContain('AEM drift [skill] SKILL.md installed copy differs from the master')
     expect(w.toasts).toContain('AEM drift [text-export] text/Motion.md page changed since the export')
     expect(w.calls.map(c => c[1])).toEqual(expect.arrayContaining(['status', 'context', 'drift']))
@@ -46,13 +47,51 @@ describe('context', () => {
     expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:35')
   })
 
-  test('/aem use runs the CLI with the project name joined and refreshes', async ($, on) => {
-    const w = floor(on, active({ use: { text: 'Active: joel/P1 - Frontend Design' } }))
+  test('/aem use checks with the CLI, then pins the project to this session', async ($, on) => {
+    const used = { ok: true, client: 'joel', project: 'P1', project_dir: '/Volumes/T7/P1', fps: { num: 24000, den: 1001, source: 'frame.md' } }
+    const w = floor(on, active({ use: { json: used } }))
     await $.session.start(START)
-    const out = await $.command.run({ command: 'aem', args: 'use joel/P1 - Frontend Design --fps 24000/1001', origin: COMPOSER, presentation: PRESENTATION })
-    expect(out.text).toBe('Active: joel/P1 - Frontend Design')
-    expect(w.calls).toContainEqual(['aem', 'use', 'joel/P1 - Frontend Design', '--fps', '24000/1001'])
-    expect(w.toasts.at(-1)?.startsWith('AEM · MergeToMaster')).toBe(true)
+    expect(w.envs.every(e => e?.AEM_PROJECT === undefined)).toBe(true) // no pin yet: the folder decides
+    const out = await $.command.run({ command: 'aem', args: 'use joel/P1 - Frontend Design', origin: COMPOSER, presentation: PRESENTATION })
+    expect(w.calls).toContainEqual(['aem', 'use', 'joel/P1 - Frontend Design', '--json'])
+    expect(out.text).toContain('Pinned joel/P1 to this session')
+    expect(out.text).toContain('fps 24000/1001 (from frame.md)')
+    // From now on every aem call carries the pin, and says it is a pin.
+    const before = w.calls.length
+    await $.tool.call({ tool: 'Read', file_path: '/x' })
+    const after = w.envs.slice(before)
+    expect(after.length).toBeGreaterThan(0)
+    expect(after.every(e => e?.AEM_PROJECT === 'joel/P1' && e?.AEM_PROJECT_SOURCE === 'session-pin')).toBe(true)
+  })
+
+  test('/aem use that the CLI refuses pins nothing', async ($, on) => {
+    const w = floor(on, active({ use: { code: 2, json: { ok: false, error: 'refusing project joel/P9: under /tmp' } } }))
+    await $.session.start(START)
+    const out = await $.command.run({ command: 'aem', args: 'use joel/P9', origin: COMPOSER, presentation: PRESENTATION })
+    expect(out.text).toContain('Not pinned: refusing project joel/P9')
+    const before = w.calls.length
+    await $.tool.call({ tool: 'Read', file_path: '/x' })
+    expect(w.envs.slice(before).every(e => e?.AEM_PROJECT === undefined)).toBe(true)
+  })
+
+  test('/aem use --clear drops the pin without any CLI call; other calls go back to the folder', async ($, on) => {
+    const used = { ok: true, client: 'joel', project: 'P2', project_dir: '/Volumes/T7/P2', fps: { num: 24000, den: 1001, source: 'aem.project.json' } }
+    const w = floor(on, active({ use: { json: used } }))
+    await $.session.start(START)
+    await $.command.run({ command: 'aem', args: 'use joel/P2', origin: COMPOSER, presentation: PRESENTATION })
+    const before = w.calls.length
+    const out = await $.command.run({ command: 'aem', args: 'use --clear', origin: COMPOSER, presentation: PRESENTATION })
+    expect(out.text).toContain('Session pin joel/P2 dropped')
+    expect(w.calls.slice(before).some(c => c[1] === 'use')).toBe(false) // the plugin owns the pin: nothing to tell the CLI
+    expect(w.envs.slice(before).every(e => e?.AEM_PROJECT === undefined)).toBe(true)
+  })
+
+  test('/aem use --clear from a plugin or a model is refused', async ($, on) => {
+    const w = floor(on, active())
+    await $.session.start(START)
+    const out = await $.command.run({ command: 'aem', args: 'use --clear', origin: { kind: 'plugin', name: 'other' }, presentation: PRESENTATION })
+    expect(out.text).toContain('can only be typed by the operator')
+    expect(w.calls.some(c => c[1] === 'use')).toBe(false)
   })
 
   test('/aem use from a plugin is refused and runs nothing', async ($, on) => {
@@ -71,6 +110,7 @@ describe('context', () => {
     expect(out.text).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:00:05')
     const help = await $.command.run({ command: 'aem', args: 'frobnicate', origin: COMPOSER, presentation: PRESENTATION })
     expect(help.text).toContain('/aem use <client>/<project>')
+    expect(help.text).toContain('/aem use --clear')
   })
 
   test('aem missing: one clear toast', async ($, on) => {

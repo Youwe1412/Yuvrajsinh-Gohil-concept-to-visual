@@ -72,7 +72,19 @@ class Sandbox:
 
     @property
     def env(self) -> dict[str, str]:
-        return {"AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry), "AEM_SANDBOX": str(self.root)}
+        # AEM_SANDBOX=1 lets aem resolve projects in temporary folders; it is set only here.
+        return {"AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry), "AEM_SANDBOX": "1",
+                "AEM_SANDBOX_DIR": str(self.root)}
+
+    def register_project(self, client_id: str, name: str, rel_dir: str) -> Path:
+        """Register a project folder (relative to the client's projects_root) in the sandbox registry."""
+        reg = json.loads(self.registry.read_text(encoding="utf-8"))
+        for c in reg["clients"]:
+            if c["id"] == client_id:
+                c.setdefault("projects", {})[name] = {"dir": rel_dir}
+                self.registry.write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
+                return Path(c["projects_root"]) / rel_dir
+        raise KeyError(client_id)
 
     def cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
@@ -82,8 +94,8 @@ def sandbox(prefix: str = "aem-sandbox-") -> Sandbox:
     """A fresh AEM_HOME and a temp copy of the registry, every client's folders moved inside it.
 
     A client's projects_root becomes <sandbox>/<its folder name> and its design system
-    <that>/<its folder name>; its registered projects are dropped (a test copy is found by folder
-    name). Nothing else in the client's entry changes.
+    <that>/<its folder name>. Its registered projects stay (their folders are relative to the
+    projects root); register_project() adds a test copy. Nothing else in the entry changes.
     """
     sb = Sandbox(Path(tempfile.mkdtemp(prefix=prefix)).resolve())
     sb.home.mkdir()
@@ -93,7 +105,6 @@ def sandbox(prefix: str = "aem-sandbox-") -> Sandbox:
         root = sb.root / Path(c["projects_root"]).name
         c["projects_root"] = str(root)
         c["design_system"] = str(root / Path(c["design_system"]).name)
-        c["projects"] = {}
     reg["_comment"] = "AEM test sandbox: a copy of registry/clients.json with every client's folders inside this sandbox."
     sb.registry.write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
     return sb

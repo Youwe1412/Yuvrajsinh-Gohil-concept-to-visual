@@ -14,7 +14,7 @@ TMP="$(mktemp -d)"
 # and registry copy, never ~/.aem or registry/clients.json; both are checked unchanged at the end.
 python3 "$ISO" snapshot "$TMP/real-state.json"
 eval "$(python3 "$ISO" sandbox aem-codex-check-)"
-trap 'rm -rf "$TMP" "$AEM_SANDBOX"' EXIT
+trap 'rm -rf "$TMP" "$AEM_SANDBOX_DIR"' EXIT
 mkdir -p "$TMP/work"
 git -C "$TMP/work" init -q
 

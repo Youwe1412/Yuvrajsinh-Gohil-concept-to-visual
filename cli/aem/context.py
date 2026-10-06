@@ -47,8 +47,8 @@ def build(ctx: Context) -> dict:
     lines = [
         "# Aavkar Educational Motion Studio (AEM)",
         "",
-        "AEM is loaded in this session. The operator chose the active project with /aem use; "
-        "do not change it yourself.",
+        f"AEM is loaded in this session. The project was resolved from {ctx.resolution.source} "
+        f"({ctx.resolution.detail}); do not change it yourself.",
         "",
         f"- Client: {c.name} (id `{c.id}`, contact {c.contact})",
         f"- Project: {ctx.project} at `{ctx.project_dir}`",
@@ -90,6 +90,7 @@ def build(ctx: Context) -> dict:
 
 INACTIVE_TEXT = (
     "# Aavkar Educational Motion Studio (AEM)\n\n"
-    "AEM is loaded but no project is active. If the work is for an AEM client, ask the operator to run "
-    "/aem use <client>/<project>. Never run `aem use` yourself."
+    "AEM is loaded but no project is resolved here: the working folder is not a registered project and no "
+    "project is pinned to this session. If the work is for an AEM client, ask the operator to start the session "
+    "in the project's folder or to run /aem use <client>/<project>. Never run `aem use` yourself."
 )

@@ -28,7 +28,8 @@ import isolation  # noqa: E402  (tests/isolation.py)
 REAL_STATE_BEFORE = isolation.snapshot()
 SANDBOX = isolation.sandbox(prefix="aem-tests-")
 os.environ.update(SANDBOX.env)
-os.environ.pop("AEM_FIXED_NOW", None)
+for _name in ("AEM_FIXED_NOW", "AEM_PROJECT", "AEM_PROJECT_SOURCE", "AEM_OPERATOR_NONCE"):
+    os.environ.pop(_name, None)
 atexit.register(SANDBOX.cleanup)
 
 HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
@@ -117,6 +118,7 @@ class World:
             "clients": [{
                 "id": "acme", "name": "Acme Learning", "contact": "Ada",
                 "design_system": str(self.ds), "projects_root": str(self.root),
+                "projects": {"P1": {"dir": "P1 - Test"}},
                 "decisions_file": "acme-decisions.md", "rules_file": "rules.md", "preference_prefix": "A",
                 "labelled_cases_file": "critic/labelled-cases.jsonl", "text_dirs": ["text"],
                 "skill": "acme-studio", "skill_master": "Skill/acme-studio",
@@ -128,8 +130,9 @@ class World:
                 "blocked_commands": ["snapshot --describe"], "idle_minutes": 10,
             }],
         }, indent=2), encoding="utf-8")
-        self.env = {**os.environ, "AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry)}
-        self.env.pop("AEM_FIXED_NOW", None)
+        self.env = {**os.environ, "AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry), "AEM_SANDBOX": "1"}
+        for name in ("AEM_FIXED_NOW", "AEM_PROJECT", "AEM_PROJECT_SOURCE", "AEM_OPERATOR_NONCE"):
+            self.env.pop(name, None)
 
     @contextlib.contextmanager
     def environ(self):
@@ -145,11 +148,14 @@ class World:
                 else:
                     os.environ[k] = v
 
-    def run(self, *args, stdin: str | None = None, env: dict | None = None, check: bool = False):
-        """Run the CLI with --json; returns (exit code, parsed JSON)."""
+    def run(self, *args, stdin: str | None = None, env: dict | None = None, check: bool = False,
+            cwd: Path | str | None = None):
+        """Run the CLI with --json; returns (exit code, parsed JSON). It runs in the project folder, so
+        the project resolves from the folder as it does for a session started there; pass cwd=self.tmp
+        for a process that is in no project."""
         e = {**self.env, **(env or {})}
         p = subprocess.run([sys.executable, str(AEM), *args, "--json"], input=stdin, capture_output=True,
-                           text=True, env=e, cwd=str(self.tmp))
+                           text=True, env=e, cwd=str(cwd if cwd is not None else self.project))
         try:
             data = json.loads(p.stdout)
         except json.JSONDecodeError:
@@ -158,8 +164,15 @@ class World:
             raise AssertionError(f"aem {' '.join(args)} exited {p.returncode}: {data}")
         return p.returncode, data
 
+    def run_raw(self, *args, stdin: str | None = None, env: dict | None = None, cwd: Path | str | None = None):
+        """The CLI without --json, for argument errors and text output: a CompletedProcess."""
+        e = {**self.env, **(env or {})}
+        return subprocess.run([sys.executable, str(AEM), *args], input=stdin, capture_output=True, text=True, env=e,
+                              cwd=str(cwd if cwd is not None else self.project))
+
     def use(self, extra=()):
-        return self.run("use", "acme/P1", "--registry", str(self.registry), *extra, check=True)
+        """The last-used hint for acme/P1. Commands do not need it: the project resolves from the folder."""
+        return self.run("use", "acme/P1", *extra, check=True)
 
     def events(self):
         p = self.project / "events.jsonl"

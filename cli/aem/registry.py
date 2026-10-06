@@ -169,24 +169,132 @@ def resolve_project(client: Client, name: str, path: str | None = None) -> tuple
                    hint="Use the folder name, a 'P1'-style prefix, or --path for a folder elsewhere.")
 
 
-def active_path() -> Path:
+# --- the last-used hint -----------------------------------------------------------------
+#
+# ~/.aem/active.json is no longer state anything trusts. `aem use` still writes it so that a bare
+# Terminal can say what was used last, and only `aem status` reads it, labelled as a hint. The
+# project a command acts on is resolved from AEM_PROJECT, the plugin's session pin or the working
+# folder (see resolve()), never from this file.
+
+HINT_NOTE = ("Last-used hint only. `aem status` shows it in a bare terminal; nothing else reads it. "
+             "A command's project comes from AEM_PROJECT, the session pin or the working folder.")
+
+
+def hint_path() -> Path:
     return aem_home() / "active.json"
 
 
-def read_active() -> dict | None:
-    return read_json(active_path())
+def write_hint(client: str, project: str, project_dir: Path) -> None:
+    write_json_atomic(hint_path(), {"_comment": HINT_NOTE, "client": client, "project": project,
+                                    "project_dir": str(project_dir), "set_at": ts()})
 
 
-def write_active(data: dict) -> None:
-    write_json_atomic(active_path(), data)
-
-
-def clear_active() -> dict | None:
-    """No project active any more. Returns what was active."""
-    was = read_active()
-    if active_path().exists():
-        active_path().unlink()
+def clear_hint() -> dict | None:
+    """Forget the last-used hint. Returns what it said."""
+    was = read_json(hint_path()) if hint_path().exists() else None
+    if hint_path().exists():
+        hint_path().unlink()
     return was
+
+
+def read_hint(reg: dict | None = None) -> tuple[dict | None, str | None]:
+    """(hint, note). A hint that points outside the registry's real roots is renamed to
+    active.json.stale and the note says so: the acceptance run left one pointing at /tmp."""
+    p = hint_path()
+    if not p.exists():
+        return None, None
+    try:
+        data = read_json(p) or {}
+    except (OSError, ValueError):
+        data = {}
+    problem = None
+    where = data.get("project_dir")
+    if not where:
+        problem = "it names no project folder"
+    elif reg is not None:
+        problem = folder_problem(reg, data.get("client"), Path(where))
+    if problem:
+        stale = p.with_name(p.name + ".stale")
+        os.replace(p, stale)
+        return None, f"moved {p} to {stale.name}: it pointed at {where or 'nothing'}, which was refused ({problem})"
+    return data, None
+
+
+# --- where a project may live -----------------------------------------------------------
+
+TMP_ROOTS = ("/tmp", "/private/tmp")
+
+
+def sandbox_allowed() -> bool:
+    """AEM_SANDBOX=1: tests and acceptance runs, whose folders are temporary by design."""
+    return os.environ.get("AEM_SANDBOX") == "1"
+
+
+def _real(p) -> Path:
+    return Path(os.path.realpath(expand(p)))
+
+
+def _inside(p: Path, root: Path) -> bool:
+    return p == root or root in p.parents
+
+
+def folder_problem(reg: dict, client_id: str | None, pdir: Path) -> str | None:
+    """Why a project folder must not be used, or None. Under /tmp or outside the registry's roots
+    (the client's projects_root and design system) is refused unless AEM_SANDBOX=1."""
+    if sandbox_allowed():
+        return None
+    real = _real(pdir)
+    for t in TMP_ROOTS:
+        if _inside(real, _real(t)):
+            return (f"{real} is under {t}; a project there is a test copy, not a client's folder "
+                    "(set AEM_SANDBOX=1 for tests and acceptance runs)")
+    roots = []
+    for c in reg.get("clients", []):
+        if client_id and c.get("id") != client_id:
+            continue
+        roots += [_real(c["projects_root"]), _real(c["design_system"])]
+    if not any(_inside(real, r) for r in roots):
+        return (f"{real} is outside the projects root and design system the registry names"
+                + (f" for {client_id!r}" if client_id else "") + " (set AEM_SANDBOX=1 for tests)")
+    return None
+
+
+@dataclass
+class Resolution:
+    """How the project was found: source is flag, env, session pin, folder, folder (design system)."""
+    source: str
+    detail: str
+
+
+class NoProject(AemError):
+    """No project resolved. status and context turn this into a plain 'no project' answer."""
+
+
+NO_PROJECT_HINT = ("Work from inside the project's folder, or set AEM_PROJECT=<client>/<project>. "
+                   "In Claude Code, /aem use <client>/<project> pins one to the session. "
+                   "A folder resolves only if the registry lists it (registry projects, or the design system).")
+
+
+def from_folder(reg: dict, cwd: str | os.PathLike) -> tuple[Client, str | None, Path | None, Resolution] | None:
+    """(c) The registered project whose folder contains cwd (the longest match across clients), or
+    the client whose design system contains it (client only)."""
+    here = _real(cwd)
+    best = None
+    for c in reg.get("clients", []):
+        client = Client(c, reg)
+        for name, entry in client.project_entries().items():
+            d = _real(client.projects_root / entry["dir"])
+            if _inside(here, d) and (best is None or len(d.parts) > len(best[2].parts)):
+                best = (client, name, d)
+    if best:
+        client, name, d = best
+        return client, name, d, Resolution("folder", f"the working folder is inside registered project {client.id}/{name} ({d})")
+    for c in reg.get("clients", []):
+        client = Client(c, reg)
+        if _inside(here, _real(client.design_system)):
+            return client, None, None, Resolution(
+                "folder (design system)", f"the working folder is inside {client.id}'s design system; no project")
+    return None
 
 
 @dataclass
@@ -198,7 +306,8 @@ class Context:
     project_dir: Path | None = None
     fps: Fraction | None = None
     fps_source: str | None = None
-    active: dict = field(default_factory=dict)
+    resolution: Resolution = field(default_factory=lambda: Resolution("none", ""))
+    registry_source: str = "the repo default"
 
     @property
     def events_path(self) -> Path:
@@ -220,70 +329,115 @@ class Context:
             "design_system": str(self.client.design_system),
             "fps": fpsmod.rate_dict(self.fps, self.fps_source) if self.fps else None,
             "registry": str(self.registry_path),
+            "resolution": {
+                "source": self.resolution.source,
+                "detail": self.resolution.detail,
+                "project": f"{self.client.id}/{self.project}" if self.project else None,
+                "folder": str(self.project_dir) if self.project_dir else None,
+                "design_system": f"client {self.client.id}'s entry in the registry",
+                "fps": self.fps_source,
+                "registry": self.registry_source,
+            },
         }
 
 
-def context(args, *, require_project: bool = True) -> Context:
-    """The client and project a command acts on: --client/--project if given, else the active one."""
-    client_id = getattr(args, "client", None)
-    project = getattr(args, "project", None)
-    reg_arg = getattr(args, "registry", None)
-    active = read_active() or {}
-    if client_id or project:
-        if not client_id:
-            client_id = active.get("client")
-            if not client_id:
-                raise AemError("--project needs --client when no project is active")
-        rpath = registry_path(reg_arg or (active.get("registry") if active.get("client") == client_id else None))
-        reg = load_registry(rpath)
-        client = find_client(reg, client_id)
-        if not project:
-            if require_project:
-                raise AemError("--client given without --project")
-            return Context(rpath, reg, client)
-        if active.get("client") == client_id and active.get("project") == project:
-            pdir = Path(active["project_dir"])
-        else:
-            project, pdir = resolve_project(client, project)
-        try:
-            fps = fpsmod.resolve(pdir)
-            rate, source = fps["fps"], fps["source"]
-        except AemError:
-            rate, source = None, None
-        if active.get("project_dir") == str(pdir) and active.get("fps"):
-            rate, source = fpsmod.parse_rate(active["fps"]), active["fps"].get("source")
-        return Context(rpath, reg, client, project, pdir, rate, source, active)
-    if not active.get("client"):
-        raise AemError("no active project", hint="Run: aem use <client>/<project>")
-    rpath = registry_path(reg_arg or active.get("registry"))
-    reg = load_registry(rpath)
-    client = find_client(reg, active["client"])
-    pdir = Path(active["project_dir"]) if active.get("project_dir") else None
-    if require_project and (pdir is None or not pdir.is_dir()):
-        raise AemError(f"active project folder is not readable: {pdir}", hint="Is the drive mounted? Or run aem use again.")
-    rate = fpsmod.parse_rate(active["fps"]) if active.get("fps") else None
-    return Context(rpath, reg, client, active.get("project"), pdir, rate,
-                   (active.get("fps") or {}).get("source"), active)
+def registry_source(explicit: str | None = None) -> str:
+    if explicit:
+        return "--registry"
+    return "AEM_REGISTRY" if os.environ.get("AEM_REGISTRY") else "the repo default"
 
 
-def use(spec: str, *, path: str | None = None, fps_override: str | None = None,
-        registry: str | None = None) -> dict:
-    if "/" not in spec:
-        raise AemError("use takes <client>/<project>", hint="For example: aem use joel/P2")
+def split_spec(spec: str, where: str) -> tuple[str, str]:
+    if "/" not in spec or not all(p.strip() for p in spec.split("/", 1)):
+        raise AemError(f"{where} must be <client>/<project>, not {spec!r}", hint="For example: joel/P2")
     client_id, project = spec.split("/", 1)
-    rpath = registry_path(registry)
-    reg = load_registry(rpath)
+    return client_id.strip(), project.strip()
+
+
+def _from_env(reg: dict) -> tuple[Client, str, Path, Resolution] | None:
+    """(a) AEM_PROJECT, which is also how the plugin hands its session pin to every aem call it makes
+    (b): the plugin sets AEM_PROJECT_SOURCE=session-pin so the answer says which it was."""
+    spec = os.environ.get("AEM_PROJECT")
+    if not spec:
+        return None
+    client_id, name = split_spec(spec, "AEM_PROJECT")
     client = find_client(reg, client_id)
-    project, pdir = resolve_project(client, project, path)
-    rate = fpsmod.resolve(pdir, fps_override)
-    data = {
+    name, pdir = resolve_project(client, name)
+    if os.environ.get("AEM_PROJECT_SOURCE") == "session-pin":
+        return client, name, pdir, Resolution("session pin", f"pinned for this session with /aem use: {client.id}/{name}")
+    return client, name, pdir, Resolution("env", f"AEM_PROJECT={spec}")
+
+
+def context(args, *, require_project: bool = True, cwd: str | os.PathLike | None = None) -> Context:
+    """The client and project a command acts on, in this order:
+      (a) AEM_PROJECT=<client>/<project> in this process's environment;
+      (b) the plugin's session pin, which the plugin passes as (a) with AEM_PROJECT_SOURCE=session-pin;
+      (c) the working directory (cwd, default the process's): the registered project whose folder
+          contains it (longest match), else the client whose design system contains it;
+      (d) nothing: NoProject.
+    --client/--project on the command line override the project part, and say so.
+    The registry is AEM_REGISTRY, --registry or the repo default; it is never read from stored state.
+    """
+    reg_arg = getattr(args, "registry", None)
+    rpath = registry_path(reg_arg)
+    reg = load_registry(rpath)
+    rsrc = registry_source(reg_arg)
+    flag_client = getattr(args, "client", None)
+    flag_project = getattr(args, "project", None)
+
+    base = _from_env(reg) or from_folder(reg, cwd or os.getcwd())
+    client, project, pdir, how = (base if base else (None, None, None, Resolution("none", "")))
+
+    if flag_client or flag_project:
+        flag_client = flag_client or (client.id if client else None)
+        if not flag_client:
+            raise AemError("--project needs --client when no client is resolved from the environment or the folder")
+        if client is None or client.id != flag_client:
+            client, project, pdir = find_client(reg, flag_client), None, None
+        if flag_project:
+            project, pdir = resolve_project(client, flag_project)
+        how = Resolution("flag", "--client/--project on the command line")
+
+    if client is None:
+        raise NoProject("no project resolved here", hint=NO_PROJECT_HINT)
+    if project is None and require_project:
+        raise NoProject(f"no project resolved here: the working folder is in {client.id}'s design system, not in a project",
+                        hint=NO_PROJECT_HINT)
+    rate = source = None
+    if pdir is not None:
+        problem = folder_problem(reg, client.id, pdir)
+        if problem:
+            raise AemError(f"refusing project {client.id}/{project}: {problem}")
+        if require_project and not pdir.is_dir():
+            raise AemError(f"project folder is not readable: {pdir}", hint="Is the drive mounted?")
+        try:
+            found = fpsmod.resolve(pdir)
+            rate, source = found["fps"], found["source"]
+        except AemError:
+            pass
+    return Context(rpath, reg, client, project, pdir, rate, source, how, rsrc)
+
+
+def use(spec: str, *, registry: str | None = None) -> dict:
+    """Check that <client>/<project> resolves from the registry, has a stated frame rate and may be
+    used, and write the last-used hint. Nothing else is stored: the project a command acts on is
+    never read back from here."""
+    client_id, name = split_spec(spec, "the project")
+    reg = load_registry(registry_path(registry))
+    client = find_client(reg, client_id)
+    project, pdir = resolve_project(client, name)
+    problem = folder_problem(reg, client.id, pdir)
+    if problem:
+        raise AemError(f"refusing project {client.id}/{project}: {problem}")
+    rate = fpsmod.resolve(pdir)
+    write_hint(client.id, project, pdir)
+    return {
         "client": client.id,
         "project": project,
         "project_dir": str(pdir),
-        "registry": str(rpath),
+        "design_system": str(client.design_system),
+        "registry": str(registry_path(registry)),
         "fps": fpsmod.rate_dict(rate["fps"], rate["source"]),
+        "fps_candidates": rate["candidates"],
         "set_at": ts(),
     }
-    write_active(data)
-    data["fps_candidates"] = rate["candidates"]
-    return data

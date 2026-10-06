@@ -198,14 +198,14 @@ def resolve(project_dir: Path, override: str | None = None) -> dict:
     if not found:
         raise AemError(
             f"no frame rate found in {project_dir}",
-            hint=f"Set \"fps\": \"N/D\" in {PROJECT_SETTINGS}, export the edit's FCPXML into the project, "
-                 "or pass --fps N/D read from the timeline. AEM never assumes a rate.",
+            hint=f"Set \"fps\": \"N/D\" in {PROJECT_SETTINGS} (read it from the edit: ffprobe r_frame_rate), or export the "
+                 "edit's FCPXML into the project. AEM never assumes a rate.",
         )
     if len(distinct) > 1:
         listing = "; ".join(f"{rate_str(f['fps'])} from {f['source']}" for f in found)
         raise AemError(
             f"the project's sources disagree on frame rate: {listing}",
-            hint="Check the edit's frameDuration and pass the right one with --fps N/D.",
+            hint=f"Check the edit's frameDuration, then make the sources agree ({PROJECT_SETTINGS} states the rate).",
         )
     return {"fps": distinct[0], "source": found[0]["source"],
             "candidates": [{"fps": rate_str(f["fps"]), "source": f["source"]} for f in found]}

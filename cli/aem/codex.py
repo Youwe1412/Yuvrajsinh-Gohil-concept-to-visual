@@ -33,9 +33,9 @@ LONG_TOOL_S = 30.0
 PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.M)
 
 
-def _ctx(reg_path: str | None):
+def _ctx(reg_path: str | None, cwd: str | None = None):
     try:
-        return registry.context(argparse.Namespace(registry=reg_path))
+        return registry.context(argparse.Namespace(registry=reg_path), cwd=cwd)
     except AemError:
         return None
 
@@ -109,7 +109,7 @@ def handle(req: dict, reg_path: str | None = None) -> dict:
     """One Codex hook event in, the JSON Codex reads back out ({} for nothing to say)."""
     event = req.get("hook_event_name") or ""
     cwd = req.get("cwd")
-    ctx = _ctx(reg_path)
+    ctx = _ctx(reg_path, cwd)
     session = req.get("session_id")
     turn = req.get("turn_id")
 

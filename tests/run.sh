@@ -15,7 +15,7 @@ CLAUDE="${CLAUDE:-${NEWEST:-claude}}"
 SNAP="$(mktemp)"
 python3 "$ISO" snapshot "$SNAP" || exit 2
 eval "$(python3 "$ISO" sandbox aem-run-)"
-trap 'rm -rf "$SNAP" "$AEM_SANDBOX"' EXIT
+trap 'rm -rf "$SNAP" "$AEM_SANDBOX_DIR"' EXIT
 
 status=0
 if [ "$WHICH" = all ] || [ "$WHICH" = unit ]; then

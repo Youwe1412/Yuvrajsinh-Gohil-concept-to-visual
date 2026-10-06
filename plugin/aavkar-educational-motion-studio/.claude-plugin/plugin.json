@@ -1,6 +1,6 @@
 {
   "name": "aavkar-educational-motion-studio",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Aavkar Educational Motion Studio (AEM): session context, time ledger, guards, render sentinel and review inbox for educational animation work. Every decision is made by the aem CLI.",
   "author": {
     "name": "Aavkar Productions"

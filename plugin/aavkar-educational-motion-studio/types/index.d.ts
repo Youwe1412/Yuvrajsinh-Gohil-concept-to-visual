@@ -9,13 +9,21 @@ export type AemStatusParts = {
   stale: number
 }
 
+// How aem resolved the project: env, session pin, folder, folder (design system), flag or none.
+export type AemResolution = { source: string; detail: string }
+
 export type AemView = {
   active: boolean
   parts: AemStatusParts | null
   contextText: string
   error: string | null
+  resolution: AemResolution | null
+  client: string | null
+  project: string | null
 }
 
+// The session pin: <client>/<project> set by /aem use for this session only, handed to every aem call as
+// AEM_PROJECT. Nothing global stores a project; the folder the session runs in is the default.
 // The ledger feature's memory across hot reloads: which session and project its
 // session_start went to, the last activity, an open idle span and the running turn.
 export type AemLedger = {
@@ -52,6 +60,6 @@ export type AemInbox = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger; inbox: AemInbox }
+    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger; inbox: AemInbox; pin: string | null }
   }
 }

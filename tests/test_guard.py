@@ -27,8 +27,7 @@ class Guard(WorldCase):
     # AEM-G01
     def test_protected_writes_denied(self):
         for f in (self.w.ds / "acme-decisions.md", self.w.ds / "rules.md", self.w.ds / "critic" / "labelled-cases.jsonl",
-                  self.w.project / "events.jsonl", self.w.project / "approvals.jsonl", self.w.home / "active.json",
-                  self.w.registry):
+                  self.w.project / "events.jsonl", self.w.project / "approvals.jsonl", self.w.registry):
             d = self.assertDenied("AEM-G01", "Edit", file_path=str(f), old_string="a", new_string="b")
             self.assertIn("/allow AEM-G01", d["how"])
         self.assertDenied("AEM-G01", "Write", file_path=str(self.w.project / "events.jsonl"), content="{}")
@@ -72,10 +71,11 @@ class Guard(WorldCase):
         self.assertDenied("AEM-G04", "Bash", command="aem inbox dismiss denial:3 --reason no")
         self.assertAllowed("Bash", command="aem inbox")
 
-    def test_g04_holds_with_no_active_project(self):
-        (self.w.home / "active.json").unlink()
-        self.assertDenied("AEM-G04", "Bash", command="aem approve x y --gate G4")
-        self.assertAllowed("Read", file_path="/Volumes/Other Client/secret.md")
+    def test_g04_holds_with_no_project_resolved(self):
+        code, d = self.guard("Bash", cwd=str(self.w.tmp), command="aem approve x y --gate G4")
+        self.assertEqual((code, d["rule"]), (1, "AEM-G04"))
+        code, d = self.guard("Read", cwd=str(self.w.tmp), file_path="/Volumes/Other Client/secret.md")
+        self.assertEqual((code, d["decision"]), (0, "allow"))
 
     # AEM-G05
     def test_placement_needs_standing_approval(self):
@@ -138,7 +138,7 @@ class ApproveDefaults(WorldCase):
         from aem import ledger, registry
         import argparse
         with self.w.environ():
-            ledger.record(registry.context(argparse.Namespace()), "render_check", scene="shot",
+            ledger.record(registry.context(argparse.Namespace(), cwd=self.w.project), "render_check", scene="shot",
                           render="renders/shot_v01.mp4", result="pass")
         _, d = self.w.run("approve", "shot", check=True)
         self.assertEqual((d["approval"]["gate"], d["approval"]["render"]), ("G4", "renders/shot_v01.mp4"))

@@ -28,6 +28,7 @@ import { sentinelAfter, sentinelBefore } from './sentinel'
 const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as const, EMPTY_VIEW)
 const ledger = atom({ plugin: 'aavkar-educational-motion-studio', key: 'ledger' } as const, EMPTY_LEDGER)
 const inbox = atom({ plugin: 'aavkar-educational-motion-studio', key: 'inbox' } as const, EMPTY_INBOX)
+const pin = atom({ plugin: 'aavkar-educational-motion-studio', key: 'pin' } as const, null as string | null)
 
 const TICK_MS = 30_000
 
@@ -47,6 +48,10 @@ function io($: EngineInterface): Io {
     getView: () => read($, view),
     setView: async v => {
       await update($, view, () => v)
+    },
+    getPin: () => read($, pin),
+    setPin: async v => {
+      await update($, pin, () => v)
     },
     getLedger: () => read($, ledger),
     patchLedger: async fn => {

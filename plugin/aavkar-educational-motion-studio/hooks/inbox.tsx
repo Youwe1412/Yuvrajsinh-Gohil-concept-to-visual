@@ -39,7 +39,7 @@ export async function loadInbox(io: Io, options: PluginOptions): Promise<string>
 
 export async function inboxCommand(io: Io, options: PluginOptions, e: CommandRunInput): Promise<CommandRunResult> {
   if (!isOperator(e.origin)) return { text: refusedText(e.command, e.origin) }
-  if (!(await io.getView()).active) return { text: 'AEM: no active project. Run /aem use <client>/<project> first.' }
+  if (!(await io.getView()).active) return { text: 'AEM: no project resolved here. Start the session in the project folder, or run /aem use <client>/<project> first.' }
   const summary = await loadInbox(io, options)
   await io.openPane(INBOX_PANE, INBOX_TITLE)
   return { text: `AEM inbox: ${summary}` }

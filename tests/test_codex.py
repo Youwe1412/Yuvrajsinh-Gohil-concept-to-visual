@@ -18,7 +18,7 @@ class CodexHook(WorldCase):
 
     def hook(self, event, **fields):
         req = {**BASE, "hook_event_name": event, "cwd": str(self.w.project), **fields}
-        code, out = self.w.run("codex-hook", stdin=json.dumps(req))
+        code, out = self.w.run("codex-hook", stdin=json.dumps(req), cwd=fields.get("cwd"))
         self.assertEqual(code, 0)
         return out
 
@@ -84,25 +84,19 @@ class CodexHook(WorldCase):
         # The pending start time is consumed.
         self.assertFalse((self.w.home / "codex" / "pending" / "r1.json").exists())
 
-    def test_no_project_still_holds_operator_only_commands(self):
-        self.w.run("use", "--clear", check=True)
-        out = self.hook("SessionStart", source="startup")
-        self.assertIn("no project is active", out["hookSpecificOutput"]["additionalContext"])
-        self.assertDenied(self.pre("Bash", {"command": "aem stage start G1"}), "AEM-G04")
-        self.assertEqual(self.pre("Bash", {"command": "ls"}), {})
+    def test_no_project_where_codex_runs_still_holds_operator_only_commands(self):
+        here = {"cwd": str(self.w.tmp)}
+        out = self.hook("SessionStart", source="startup", **here)
+        self.assertIn("no project is resolved", out["hookSpecificOutput"]["additionalContext"])
+        self.assertDenied(self.hook("PreToolUse", turn_id="t1", tool_name="Bash", tool_use_id="c",
+                                    tool_input={"command": "aem stage start G1"}, **here), "AEM-G04")
+        self.assertEqual(self.hook("PreToolUse", turn_id="t1", tool_name="Bash", tool_use_id="c",
+                                   tool_input={"command": "ls"}, **here), {})
+        self.assertEqual(self.w.events(), [])  # nothing is recorded without a project
 
     def test_bad_input_fails_open(self):
         code, out = self.w.run("codex-hook", stdin="not json")
         self.assertEqual((code, out), (0, {}))
-
-
-class UseClear(WorldCase):
-    def test_clear(self):
-        self.w.use()
-        code, d = self.w.run("use", "--clear")
-        self.assertEqual((code, d["active"], d["was"]["client"]), (0, False, "acme"))
-        self.assertFalse((self.w.home / "active.json").exists())
-        self.assertEqual(self.w.run("status")[1]["active"], False)
 
 
 class CodexConfig(WorldCase):

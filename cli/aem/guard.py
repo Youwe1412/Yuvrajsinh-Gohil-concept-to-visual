@@ -79,8 +79,14 @@ def protected_paths(ctx: Context) -> list[Path]:
     out = [_real(ctx.client.design_system / f) for f in ctx.client.protected["design_system"]]
     if ctx.project_dir:
         out += [_real(ctx.project_dir / f) for f in ctx.client.protected["project"]]
-    out += [_real(aem_home() / "active.json"), _real(ctx.registry_path)]
+    out += [_real(ctx.registry_path)]
     return out
+
+
+def nonce_dir() -> Path:
+    """~/.aem/nonces: the plugin writes the hash of a one-time operator nonce here. The agent's
+    Write and Edit tools may not touch it (cooperative: a shell still could)."""
+    return _real(aem_home() / "nonces")
 
 
 def allowed_roots(ctx: Context | None, reg: dict) -> list[Path]:
@@ -120,7 +126,7 @@ def _deny(rule: str, reason: str, how: str, **extra) -> dict:
 
 def _allow_for(ctx: Context | None, denial: dict, subject: str) -> dict | None:
     """An operator override that covers this denial: by rule ID, by command text, or by path."""
-    if ctx is None:
+    if ctx is None or ctx.project_dir is None:
         return None
     for a in clients.active_allows(ctx):
         t = (a.get("target") or "").strip()
@@ -134,7 +140,10 @@ def _allow_for(ctx: Context | None, denial: dict, subject: str) -> dict | None:
 def check(tool: str, args: dict, cwd: str | None, *, reg_path: str | None = None) -> dict:
     """Decide one tool call. Never raises for a missing project: no project, no scope."""
     try:
-        ctx = registry.context(argparse.Namespace(registry=reg_path))
+        # The project comes from where the call runs (AEM_PROJECT, the plugin's session pin, or cwd),
+        # never from stored state. A client-only context (cwd in a design system) still guards that
+        # client's files.
+        ctx = registry.context(argparse.Namespace(registry=reg_path), require_project=False, cwd=cwd)
     except AemError:
         ctx = None
     reg = ctx.registry if ctx else registry.load_registry(registry.registry_path(reg_path))
@@ -151,7 +160,7 @@ def check(tool: str, args: dict, cwd: str | None, *, reg_path: str | None = None
             ledger.record(ctx, "allow_used", note=f"{tool}: {subject}"[:500], allow_id=override["allow_id"],
                           rule=denial["rule"], source="aem guard")
         return {"decision": "allow", "overridden": denial, "allow_id": override["allow_id"], "once": override["once"]}
-    if ctx:
+    if ctx and ctx.project_dir:
         ledger.record(ctx, "denial", note=denial["reason"][:500], rule=denial["rule"], tool=tool,
                       subject=subject[:500], source="aem guard")
     return denial
@@ -172,6 +181,10 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
                          "codex-hook": "nothing (Codex runs it)"}.get(sub, f"/{sub}")
                 return _deny("AEM-G04", f"`aem {sub}` is the operator's command, not the agent's.",
                              f"Ask the operator to type {slash}.", command=sub)
+    # The operator-nonce folder is protected whatever the project (or none).
+    if tool in WRITE_TOOLS and _under(_real(str(args.get(WRITE_TOOLS[tool]) or ""), cwd), [nonce_dir()]):
+        return _deny("AEM-G01", f"{nonce_dir()} is protected: the plugin writes the operator's one-time nonces there.",
+                     "Ask the operator to run the command in their own terminal.", path=str(nonce_dir()))
     if ctx is None:
         return None
 
@@ -243,6 +256,8 @@ def _media_in_text(text: str, gates: dict, cwd: str | None) -> list[Path]:
 
 
 def _gate_media(ctx: Context, media: list[Path], what: str, gates: dict, *, require: bool) -> dict | None:
+    if ctx.project_dir is None:  # a client-only context has no approvals to check
+        return None
     if not media:
         if require:
             return _deny("AEM-G05", f"{what} names no render, so AEM cannot check its approvals.",

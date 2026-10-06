@@ -14,9 +14,9 @@ from .util import AemError, expand, fmt_duration, strip_private
 def _common(p: argparse.ArgumentParser, *, scope: bool = True) -> None:
     p.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="print one JSON object")
     if scope:
-        p.add_argument("--client", default=argparse.SUPPRESS, help="client id (default: the active one)")
-        p.add_argument("--project", default=argparse.SUPPRESS, help="project (default: the active one)")
-        p.add_argument("--registry", default=argparse.SUPPRESS, help="registry file (default: the active one's, or the repo's)")
+        p.add_argument("--client", default=argparse.SUPPRESS, help="client id (default: resolved from AEM_PROJECT or the working folder)")
+        p.add_argument("--project", default=argparse.SUPPRESS, help="project (default: resolved from AEM_PROJECT or the working folder)")
+        p.add_argument("--registry", default=argparse.SUPPRESS, help="registry file (default: AEM_REGISTRY, else the repo's)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,15 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"aem {VERSION}")
     sub = ap.add_subparsers(dest="cmd", metavar="command")
 
-    p = sub.add_parser("use", help="make <client>/<project> the active project (--clear: none)")
+    p = sub.add_parser("use", help="check <client>/<project> and remember it as the last used (--clear: forget it)")
     p.add_argument("spec", metavar="client/project", nargs="?")
-    p.add_argument("--clear", action="store_true", help="make no project active")
-    p.add_argument("--path", help="project folder outside the client's projects_root (a test copy, say)")
-    p.add_argument("--fps", help="the edit's exact rate as N/D, when the project does not state it")
+    p.add_argument("--clear", action="store_true", help="forget the last-used hint")
     _common(p, scope=False)
     p.add_argument("--registry", default=None)
 
-    p = sub.add_parser("status", help="active client, project, gate, stage time, approvals")
+    p = sub.add_parser("status", help="the resolved project and how, gate, stage time, approvals")
     _common(p)
 
     p = sub.add_parser("context", help="the text the Claude Code plugin adds to the system prompt")
@@ -154,15 +152,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_use(a):
     if a.clear:
-        was = registry.clear_active()
-        return {"ok": True, "active": False, "was": was}, (
-            f"No project active (was {was['client']}/{was['project']})." if was else "No project was active.")
+        was = registry.clear_hint()
+        return {"ok": True, "cleared": True, "was": was}, (
+            f"Forgot the last-used hint (was {was['client']}/{was['project']})." if was else "No last-used hint was stored.")
     if not a.spec:
         raise AemError("use takes <client>/<project>, or --clear")
-    data = registry.use(a.spec, path=a.path, fps_override=a.fps, registry=a.registry)
+    data = registry.use(a.spec, registry=a.registry)
     f = data["fps"]
-    text = (f"Active: {data['client']}/{data['project']}\n  folder {data['project_dir']}\n"
-            f"  fps {f['num']}/{f['den']} (from {f['source']})")
+    text = (f"{data['client']}/{data['project']} resolves.\n  folder {data['project_dir']}\n"
+            f"  fps {f['num']}/{f['den']} (from {f['source']})\n"
+            "  A command's project comes from where it runs: AEM_PROJECT=" + f"{data['client']}/{data['project']}"
+            + ", the folder, or the Claude Code session pin set by /aem use.")
     return data, text
 
 
@@ -185,38 +185,73 @@ def _status(ctx) -> dict:
             "idle_minutes": ctx.client.idle_minutes, "gates": ctx.client.gates}
 
 
+def _resolution_lines(res: dict) -> list[str]:
+    return [f"  resolved from {res['source']}: {res['detail']}" if res.get("detail") else f"  resolved from {res['source']}",
+            f"  registry {res['registry']}"]
+
+
+def _no_project_status(a, exc: AemError):
+    reg = registry.load_registry(registry.registry_path(getattr(a, "registry", None)))
+    hint, note = registry.read_hint(reg)
+    res = {"source": "none", "detail": "no AEM_PROJECT, no session pin, and the working folder is not in a registered project",
+           "registry": registry.registry_source(getattr(a, "registry", None))}
+    data = {"active": False, "resolved": False, "message": "no project resolved", "hint": exc.hint, "resolution": res,
+            "last_used_hint": ({k: v for k, v in hint.items() if not k.startswith("_")} if hint else None),
+            "hint_note": note}
+    lines = ["No project resolved here (folder not registered).", *_resolution_lines(res)]
+    if hint:
+        lines.append(f"  last used (a hint only, nothing reads it): {hint['client']}/{hint['project']} at {hint['project_dir']}")
+        lines.append(f"    work from that folder, or: AEM_PROJECT={hint['client']}/{hint['project']}")
+    if note:
+        lines.append(f"  {note}")
+    lines.append(f"  {exc.hint}")
+    return data, "\n".join(lines)
+
+
 def cmd_status(a):
     try:
-        ctx = registry.context(a)
-    except AemError as exc:
-        if exc.message.startswith("no active project"):
-            return {"active": False, "message": "no active project", "hint": "aem use <client>/<project>"}, \
-                   "No active project. Run: aem use <client>/<project>"
-        raise
-    data = {"active": True, **_status(ctx)}
+        ctx = registry.context(a, require_project=False)
+    except registry.NoProject as exc:
+        return _no_project_status(a, exc)
+    _hint, note = registry.read_hint(ctx.registry)
+    if ctx.project is None:
+        data = {"active": False, "resolved": False, **ctx.summary(), "message": "no project resolved: client only",
+                "hint_note": note}
+        lines = [f"AEM · {ctx.client.name} · no project",
+                 f"  client   {ctx.client.id} (the working folder is inside its design system)",
+                 f"  design system  {ctx.client.design_system}", *_resolution_lines(data["resolution"])]
+        if note:
+            lines.append(f"  {note}")
+        return data, "\n".join(lines)
+    data = {"active": True, "resolved": True, **_status(ctx), "hint_note": note}
     st = data["stage"]
+    res = data["resolution"]
     lines = [data["statusline"],
-             f"  folder  {data['project_dir']}",
-             f"  fps     {data['fps']['num']}/{data['fps']['den']} ({data['fps'].get('source')})" if data["fps"] else "  fps     unknown"]
+             f"  project  {res['project']}  (resolved from {res['source']}: {res['detail']})",
+             f"  folder   {data['project_dir']}",
+             f"  design system  {data['design_system']}  ({res['design_system']})",
+             f"  fps      {data['fps']['num']}/{data['fps']['den']} (from {data['fps'].get('source')})" if data["fps"]
+             else "  fps      unknown (no frame rate stated in the project folder)",
+             f"  registry {res['registry']}: {data['registry']}"]
+    if note:
+        lines.append(f"  {note}")
     if st:
-        lines.append(f"  stage   {st['gate']}{' · ' + st['scene'] if st['scene'] else ''} since {st['since']}")
+        lines.append(f"  stage    {st['gate']}{' · ' + st['scene'] if st['scene'] else ''} since {st['since']}")
     ap = data["approvals"]
     lines.append(f"  approvals standing {ap['standing']}, stale {ap['stale']}")
-    for s, v in ap["scenes"].items():
+    for sc, v in ap["scenes"].items():
         if v["state"] != "approved":
-            lines.append(f"    {s}: {v['state']}{' — ' + v['why'] if v.get('why') else ''}")
+            lines.append(f"    {sc}: {v['state']}{' — ' + v['why'] if v.get('why') else ''}")
     if data["allows"]:
-        lines.append("  allows  " + ", ".join(f"{x['allow_id']} {x['target']}{' (once)' if x['once'] else ''}" for x in data["allows"]))
+        lines.append("  allows   " + ", ".join(f"{x['allow_id']} {x['target']}{' (once)' if x['once'] else ''}" for x in data["allows"]))
     return data, "\n".join(lines)
 
 
 def cmd_context(a):
     try:
         ctx = registry.context(a)
-    except AemError as exc:
-        if exc.message.startswith("no active project"):
-            return {"active": False, "text": context.INACTIVE_TEXT}, context.INACTIVE_TEXT
-        raise
+    except registry.NoProject:
+        return {"active": False, "text": context.INACTIVE_TEXT}, context.INACTIVE_TEXT
     data = context.build(ctx)
     return data, data["text"]
 
@@ -369,11 +404,9 @@ def cmd_rendered(a):
         raise AemError(f"rendered reads one JSON object on stdin ({exc.msg})")
     try:
         ctx = registry.context(a)
-    except AemError as exc:
-        if exc.message.startswith("no active project"):
-            return {"ok": True, "render": False, "outputs": [], "passed": 0, "failed": 0, "text": "",
-                    "note": "no active project"}, "No active project: nothing checked."
-        raise
+    except registry.NoProject:
+        return {"ok": True, "render": False, "outputs": [], "passed": 0, "failed": 0, "text": "",
+                "note": "no project resolved"}, "No project resolved here: nothing checked."
     started = req.get("started_at")
     r = sentinel.rendered(ctx, str(req.get("command") or ""), req.get("cwd"),
                           float(started) if started is not None else None, req.get("exit_code"),

@@ -68,7 +68,9 @@ class ImportReview(WorldCase):
         self.assert_untouched()
 
     def test_pal_25(self):
-        self.w.use(["--fps", "25/1"])
+        (self.w.project / "frame.md").write_text('---\nfps           : "25/1"\n---\n', encoding="utf-8")
+        (self.w.project / "data" / "words.json").write_text(json.dumps({**WORDS, "fps_num": 25, "fps_den": 1}))
+        self.w.use()
         d, by_row, review = self.run_import()
         self.assertEqual(review["fps"], "25/1")
         self.assertEqual(by_row[2]["frame"], 128 * 25)

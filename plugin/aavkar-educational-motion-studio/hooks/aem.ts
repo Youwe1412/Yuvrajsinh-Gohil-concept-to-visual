@@ -4,6 +4,7 @@ import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } fr
 import type { AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
+export const PLUGIN_VERSION = '0.8.0'
 
 export type Json = { [key: string]: unknown }
 
@@ -13,7 +14,7 @@ export type AemResult = {
   text: string
 }
 
-export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean }
+export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean; env?: Record<string, string> }
 
 // The host's process runner, handed in by each feature as a closure over its own `$`
 // (the engine follows `$` only within the file that holds it).
@@ -39,7 +40,7 @@ export async function runAem(
   for (const bin of candidates(options, home)) {
     try {
       const argv = asJson ? [bin, ...args, '--json'] : [bin, ...args]
-      const ran = await run(argv, { stdin: init.stdin, timeoutMs: init.timeoutMs ?? 120_000 })
+      const ran = await run(argv, { stdin: init.stdin, timeoutMs: init.timeoutMs ?? 120_000, env: init.env })
       const text = (ran.stdout + (ran.stderr ? `\n${ran.stderr}` : '')).trim()
       if (!asJson) return { code: ran.exitCode, data: {}, text }
       let data: Json
@@ -98,19 +99,32 @@ export function splitArgs(input: string): string[] {
 
 // --- the view every feature shows: pure, built from `aem status` and `aem context` ---
 
-export const EMPTY_VIEW: AemView = { active: false, parts: null, contextText: '', error: null }
+export const EMPTY_VIEW: AemView = { active: false, parts: null, contextText: '', error: null, resolution: null, client: null, project: null }
 
 export function viewFrom(status: AemResult, context: AemResult): AemView {
   if (status.code === 127 || status.data.ok === false) {
-    return { active: false, parts: null, contextText: '', error: errorOf(status) }
+    return { ...EMPTY_VIEW, error: errorOf(status) }
   }
   const active = status.data.active === true
+  const res = status.data.resolution as { source?: unknown; detail?: unknown } | undefined
   return {
     active,
     parts: active ? (status.data.statusline_parts as AemStatusParts) : null,
     contextText: typeof context.data.text === 'string' ? context.data.text : '',
     error: null,
+    resolution: res && typeof res.source === 'string' ? { source: res.source, detail: typeof res.detail === 'string' ? res.detail : '' } : null,
+    client: typeof status.data.client === 'string' ? status.data.client : null,
+    project: typeof status.data.project === 'string' ? status.data.project : null,
   }
+}
+
+// The toast every session shows at start. No toast at all means the plugin is not loaded.
+export function startToast(v: AemView): string {
+  const head = `AEM ${PLUGIN_VERSION}`
+  if (v.error) return `${head} · ${v.error.slice(0, 120)}`
+  if (v.active && v.client && v.project) return `${head} · ${v.client}/${v.project} · resolved from ${v.resolution?.source ?? 'unknown'}`
+  if (v.client) return `${head} · ${v.client} (design system, no project) · resolved from ${v.resolution?.source ?? 'folder'}`
+  return `${head} · no project (folder not registered)`
 }
 
 function elapsed(since: string, nowMs: number): string {
@@ -123,7 +137,7 @@ function elapsed(since: string, nowMs: number): string {
 // AEM · client · project · gate · stage time
 export function statusLine(v: AemView, nowMs: number): string {
   if (v.error) return `AEM · ${v.error.slice(0, 60)}`
-  if (!v.active || !v.parts) return 'AEM · no active project · /aem use <client>/<project>'
+  if (!v.active || !v.parts) return 'AEM · no project here · start in its folder or /aem use <client>/<project>'
   const p = v.parts
   const bits = ['AEM', p.client, p.project ?? '-']
   if (p.gate && p.since) {
@@ -156,6 +170,8 @@ export type Io = {
   registerCommand: (spec: CommandSpecLite) => Promise<void>
   getView: () => Promise<AemView>
   setView: (v: AemView) => Promise<void>
+  getPin: () => Promise<string | null>
+  setPin: (pin: string | null) => Promise<void>
   getLedger: () => Promise<AemLedger>
   patchLedger: (fn: (l: AemLedger) => AemLedger) => Promise<void>
   getInbox: () => Promise<AemInbox>
@@ -163,8 +179,12 @@ export type Io = {
   openPane: (id: string, title: string) => Promise<void>
 }
 
+// The session pin reaches every aem call as AEM_PROJECT (with AEM_PROJECT_SOURCE saying it is a pin), so the
+// CLI resolves the same project the operator pinned; with no pin the CLI uses the session's working folder.
 export async function cli(io: Io, options: PluginOptions, args: readonly string[], init?: RunInit): Promise<AemResult> {
-  return runAem(io.run, await io.home(), options, args, init)
+  const pin = await io.getPin()
+  const env = pin ? { AEM_PROJECT: pin, AEM_PROJECT_SOURCE: 'session-pin', ...init?.env } : init?.env
+  return runAem(io.run, await io.home(), options, args, { ...init, env })
 }
 
 // Reads status and context from the CLI into state, then redraws the status line.

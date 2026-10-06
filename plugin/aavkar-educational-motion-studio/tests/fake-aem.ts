@@ -9,6 +9,7 @@ export type Router = (args: readonly string[], stdin: string | undefined) => Rep
 export type World = {
   calls: string[][]
   stdins: (string | undefined)[]
+  envs: (Record<string, string> | undefined)[]
   toasts: string[]
   statuses: (string | undefined)[]
   clock: ReturnType<typeof mock.clock>
@@ -20,12 +21,13 @@ export type World = {
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
 export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string } = {}): World {
-  const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
+  const w: World = { calls: [], stdins: [], envs: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
   mock.env(on, { HOME: '/Users/test' })
   mock.store(on)
   on('process.run', ($, e) => {
     w.calls.push([...e.argv])
     w.stdins.push(e.init?.stdin)
+    w.envs.push(e.init?.env)
     if (opts.cannotStart) throw new Error(`spawn ${e.argv[0]} ENOENT`)
     const args = e.argv.slice(1).filter(a => a !== '--json')
     const r = route(args, e.init?.stdin)
@@ -66,7 +68,7 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
 }
 
 export const INACTIVE: Router = args => {
-  if (args[0] === 'status') return { json: { ok: true, active: false, message: 'no active project' } }
+  if (args[0] === 'status') return { json: { ok: true, active: false, message: 'no project resolved', resolution: { source: 'none', detail: '' } } }
   if (args[0] === 'context') return { json: { ok: true, active: false, text: 'AEM inactive text' } }
   return { code: 2, json: { ok: false, error: 'no active project' } }
 }
@@ -80,7 +82,7 @@ export function active(over: Partial<Record<string, Reply>> = {}): Router {
   return (args, stdin) => {
     const hit = over[args[0] ?? '']
     if (hit) return hit
-    if (args[0] === 'status') return { json: { ok: true, active: true, statusline_parts: PARTS } }
+    if (args[0] === 'status') return { json: { ok: true, active: true, client: 'joel', project: 'P1', statusline_parts: PARTS, resolution: { source: 'folder', detail: 'the working folder is inside registered project joel/P1' } } }
     if (args[0] === 'context') return { json: { ok: true, active: true, text: 'CONTEXT FOR JOEL P1' } }
     if (args[0] === 'drift') return { json: { ok: true, findings: [] } }
     return { json: { ok: true, args, stdin } }

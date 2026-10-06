@@ -7,56 +7,57 @@ from helpers import REPO, WorldCase
 
 
 class UseStatus(WorldCase):
-    def test_status_without_active(self):
-        code, d = self.w.run("status")
+    def test_status_without_a_project(self):
+        code, d = self.w.run("status", cwd=self.w.tmp)
         self.assertEqual(code, 0)
         self.assertFalse(d["active"])
-        self.assertEqual(d["message"], "no active project")
+        self.assertEqual(d["message"], "no project resolved")
+        self.assertEqual(d["resolution"]["source"], "none")
 
-    def test_use_writes_active_with_rational_fps(self):
+    def test_use_checks_and_writes_a_labelled_hint_not_state(self):
         _, d = self.w.use()
-        self.assertEqual(d["project"], "P1 - Test")
+        self.assertEqual(d["project"], "P1")
         self.assertEqual((d["fps"]["num"], d["fps"]["den"]), (24000, 1001))
-        active = json.loads((self.w.home / "active.json").read_text())
-        self.assertEqual(active["client"], "acme")
-        self.assertEqual(active["fps"], {"num": 24000, "den": 1001, "source": "frame.md"})
-        self.assertEqual(active["registry"], str(self.w.registry.resolve()))
+        hint = json.loads((self.w.home / "active.json").read_text())
+        self.assertEqual((hint["client"], hint["project"]), ("acme", "P1"))
+        self.assertIn("Last-used hint only", hint["_comment"])
+        # Nothing that a command could trust: no registry path, no frame rate.
+        self.assertEqual(set(hint) - {"_comment"}, {"client", "project", "project_dir", "set_at"})
 
-    def test_use_explicit_path_and_fps(self):
-        other = self.w.tmp / "elsewhere"
-        other.mkdir()
-        _, d = self.w.run("use", "acme/scratch", "--path", str(other), "--fps", "25/1", "--registry", str(self.w.registry), check=True)
-        self.assertEqual(d["project_dir"], str(other.resolve()))
-        self.assertEqual(d["fps"]["source"], "operator (--fps)")
+    def test_use_has_no_path_or_fps_override(self):
+        # A project is its registered folder; its frame rate is what the folder states.
+        for extra in (["--fps", "25/1"], ["--path", str(self.w.tmp)]):
+            p = self.w.run_raw("use", "acme/P1", *extra)
+            self.assertEqual(p.returncode, 2)
+            self.assertIn("unrecognized arguments", p.stderr)
 
     def test_use_unknown(self):
-        code, d = self.w.run("use", "nobody/P1", "--registry", str(self.w.registry))
+        code, d = self.w.run("use", "nobody/P1")
         self.assertEqual(code, 2)
         self.assertIn("unknown client", d["error"])
-        code, d = self.w.run("use", "acme/P9", "--registry", str(self.w.registry))
+        code, d = self.w.run("use", "acme/P9")
         self.assertEqual(code, 2)
 
     def test_use_clear_as_the_plugin_sends_it(self):
-        # `/aem use --clear` reaches the CLI as `aem use "" --clear`.
+        # Regression (6 Oct 2026): `/aem use --clear` reaches the CLI as `aem use "" --clear`.
         self.w.use()
         self.assertTrue((self.w.home / "active.json").exists())
         _, d = self.w.run("use", "", "--clear", check=True)
-        self.assertEqual((d["active"], d["was"]["client"]), (False, "acme"))
+        self.assertEqual((d["cleared"], d["was"]["client"]), (True, "acme"))
         self.assertFalse((self.w.home / "active.json").exists())
 
     def test_use_without_fps_refuses(self):
         (self.w.project / "frame.md").unlink()
-        code, d = self.w.run("use", "acme/P1", "--registry", str(self.w.registry))
+        code, d = self.w.run("use", "acme/P1")
         self.assertEqual(code, 2)
         self.assertIn("no frame rate", d["error"])
 
     def test_status_fields(self):
-        self.w.use()
         self.w.run("stage", "start", "G1", check=True)
         _, d = self.w.run("status", check=True)
         self.assertTrue(d["active"])
         self.assertEqual(d["stage"]["gate"], "G1")
-        self.assertTrue(d["statusline"].startswith("AEM · Acme Learning · P1 - Test · G1 · 0:00:"))
+        self.assertTrue(d["statusline"].startswith("AEM · Acme Learning · P1 · G1 · 0:00:"))
         self.assertEqual(d["idle_minutes"], 10)
 
 
@@ -259,7 +260,7 @@ class Allow(WorldCase):
         from aem import clients, registry
         import argparse
         with self.w.environ():
-            ctx = registry.context(argparse.Namespace())
+            ctx = registry.context(argparse.Namespace(), cwd=self.w.project)
             clients.consume_allow(ctx, a["allow_id"], subject="hyperframes snapshot --describe")
         _, l = self.w.run("allow", "--list", check=True)
         self.assertEqual([x["allow_id"] for x in l["allows"]], [b["allow_id"]])
@@ -339,6 +340,10 @@ class RealRegistry(unittest.TestCase):
         self.assertEqual(joel.idle_minutes, 10)
         self.assertIn("snapshot --describe", joel.blocked_commands)
         self.assertEqual(joel.raw["review_inbox"]["service"], "Frame.io")
+        # P2 is registered in the same shape as P1: a folder under the projects root, and a note.
+        for name, folder in (("P1", "P1 - Frontend Design/Animations using Hyperframes/MergeToMaster"), ("P2", "P2 - Claude Code")):
+            self.assertEqual(set(joel.raw["projects"][name]), {"dir", "note"})
+            self.assertEqual(joel.raw["projects"][name]["dir"], folder)
         self.assertTrue(joel.raw["audio_libraries"])
         self.assertEqual(str(joel.projects_root), str(joel.design_system.parent))
         template = json.loads((REPO / "registry" / "client-template" / "client.json").read_text())
@@ -365,7 +370,7 @@ if __name__ == "__main__":
 
 class ContextText(WorldCase):
     def test_inactive(self):
-        code, d = self.w.run("context")
+        code, d = self.w.run("context", cwd=self.w.tmp)
         self.assertEqual(code, 0)
         self.assertFalse(d["active"])
         self.assertIn("/aem use", d["text"])
@@ -390,7 +395,7 @@ class ContextText(WorldCase):
         self.w.run("stage", "start", "G4", "shot", check=True)
         _, d = self.w.run("status", check=True)
         p = d["statusline_parts"]
-        self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"]), ("Acme Learning", "P1 - Test", "G4", "shot", 0))
+        self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"]), ("Acme Learning", "P1", "G4", "shot", 0))
 
 
 class LedgerPhase3(WorldCase):
