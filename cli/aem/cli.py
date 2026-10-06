@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, context, drift, guard, inbox, ledger, registry, render, review, sentinel
+from . import VERSION, approvals, clients, codex, context, drift, guard, inbox, ledger, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -25,8 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=f"aem {VERSION}")
     sub = ap.add_subparsers(dest="cmd", metavar="command")
 
-    p = sub.add_parser("use", help="make <client>/<project> the active project")
-    p.add_argument("spec", metavar="client/project")
+    p = sub.add_parser("use", help="make <client>/<project> the active project (--clear: none)")
+    p.add_argument("spec", metavar="client/project", nargs="?")
+    p.add_argument("--clear", action="store_true", help="make no project active")
     p.add_argument("--path", help="project folder outside the client's projects_root (a test copy, say)")
     p.add_argument("--fps", help="the edit's exact rate as N/D, when the project does not state it")
     _common(p, scope=False)
@@ -125,6 +126,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("rendered", help="check the renders a finished shell command wrote (the plugin runs this; JSON on stdin)")
     _common(p)
 
+    p = sub.add_parser("codex-hook", help="answer one OpenAI Codex hook event (Codex runs this; JSON on stdin)")
+    _common(p)
+
+    p = sub.add_parser("codex-config", help="print the hook configuration that makes Codex call AEM")
+    p.add_argument("--format", choices=["toml", "json"], default="toml",
+                   help="toml for ~/.codex/config.toml (verified with Codex 0.146), json for ~/.codex/hooks.json")
+    _common(p, scope=False)
+
     p = sub.add_parser("drift", help="text exports vs pages, installed skill vs master, skill rule IDs vs rules")
     p.add_argument("--skills-dir", default="~/.claude/skills")
     _common(p)
@@ -144,6 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
 # --- commands --------------------------------------------------------------------------
 
 def cmd_use(a):
+    if a.clear:
+        was = registry.clear_active()
+        return {"ok": True, "active": False, "was": was}, (
+            f"No project active (was {was['client']}/{was['project']})." if was else "No project was active.")
+    if not a.spec:
+        raise AemError("use takes <client>/<project>, or --clear")
     data = registry.use(a.spec, path=a.path, fps_override=a.fps, registry=a.registry)
     f = data["fps"]
     text = (f"Active: {data['client']}/{data['project']}\n  folder {data['project_dir']}\n"
@@ -352,7 +367,13 @@ def cmd_rendered(a):
         req = json.loads(raw or "{}")
     except json.JSONDecodeError as exc:
         raise AemError(f"rendered reads one JSON object on stdin ({exc.msg})")
-    ctx = registry.context(a)
+    try:
+        ctx = registry.context(a)
+    except AemError as exc:
+        if exc.message.startswith("no active project"):
+            return {"ok": True, "render": False, "outputs": [], "passed": 0, "failed": 0, "text": "",
+                    "note": "no active project"}, "No active project: nothing checked."
+        raise
     started = req.get("started_at")
     r = sentinel.rendered(ctx, str(req.get("command") or ""), req.get("cwd"),
                           float(started) if started is not None else None, req.get("exit_code"),
@@ -402,9 +423,35 @@ def _jsonable(o):
     return str(o)
 
 
+def cmd_codex_config(a):
+    import shlex
+    import shutil
+    installed = Path.home() / ".local" / "bin" / "aem"
+    launcher = installed if installed.exists() else Path(shutil.which("aem") or Path(__file__).resolve().parents[1] / "bin" / "aem")
+    command = f"{shlex.quote(str(launcher))} codex-hook"
+    text = codex.config(command, a.format)
+    return {"ok": True, "format": a.format, "command": command, "config": text}, text.rstrip("\n")
+
+
+COMMANDS["codex-config"] = cmd_codex_config
+
+
+def _codex_hook(a) -> int:
+    """Codex reads exactly one JSON object back. Any failure allows the call (fail open) and says why
+    on stderr, which Codex logs; the plugin does the same."""
+    try:
+        print(codex.main_json(sys.stdin.read(), getattr(a, "registry", None)))
+    except Exception as exc:  # noqa: BLE001 - a broken check must not stop the agent
+        print("{}")
+        print(f"aem codex-hook: not checked: {exc}", file=sys.stderr)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = build_parser()
     a = ap.parse_args(argv)
+    if a.cmd == "codex-hook":
+        return _codex_hook(a)
     as_json = bool(getattr(a, "json", False))
     if not a.cmd:
         ap.print_help()

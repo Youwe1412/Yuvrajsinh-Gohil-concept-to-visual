@@ -10,7 +10,7 @@ import re
 from . import ledger
 from .registry import Context
 
-AGENT_DENIED = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard")
+AGENT_DENIED = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard", "codex-hook")
 
 
 def preferences(ctx: Context) -> list[dict]:

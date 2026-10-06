@@ -181,6 +181,14 @@ def write_active(data: dict) -> None:
     write_json_atomic(active_path(), data)
 
 
+def clear_active() -> dict | None:
+    """No project active any more. Returns what was active."""
+    was = read_active()
+    if active_path().exists():
+        active_path().unlink()
+    return was
+
+
 @dataclass
 class Context:
     registry_path: Path

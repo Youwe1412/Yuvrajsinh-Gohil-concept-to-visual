@@ -22,8 +22,9 @@ type Decision = { decision?: string; rule?: string; rule_name?: string; reason?:
 
 export async function guardCall(io: Io, options: PluginOptions, tool: string, args: Record<string, unknown>): Promise<GuardVerdict> {
   if (!GUARDED_TOOLS.has(tool)) return {}
-  // With no project active only AEM-G04 (operator-only aem commands) applies, and only to Bash.
-  if (tool !== 'Bash' && !(await io.getView()).active) return {}
+  // Every guarded call goes to the CLI, which reads the active project itself. The plugin's own view
+  // is refreshed on a timer and can lag a project made active elsewhere (another session, a terminal),
+  // so it must not decide what is checked. With no project active the CLI allows all but AEM-G04.
   const { tool_use_id: _id, agentId: _agent, tool: _tool, ...input } = args
   const r = await cli(io, options, ['guard'], { stdin: JSON.stringify({ tool, input, cwd: await io.cwd() }), timeoutMs: 60_000 })
   if (r.code === 127) {

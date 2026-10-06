@@ -13,7 +13,9 @@ later commands use the same one.
 
 | Command | What it does |
 |---|---|
-| `use <client>/<project> [--path DIR] [--fps N/D]` | Makes a project active: writes `~/.aem/active.json` (`AEM_HOME` overrides `~/.aem`). The project is found by registry entry, exact folder name, or a unique `NAME - ` prefix (`joel/P2` finds `P2 - Claude Code`); `--path` takes a folder anywhere (a test copy). |
+| `use <client>/<project> [--path DIR] [--fps N/D]` | Makes a project active: writes `~/.aem/active.json` (`AEM_HOME` overrides `~/.aem`). The project is found by registry entry, exact folder name, or a unique `NAME - ` prefix (`joel/P2` finds `P2 - Claude Code`); `--path` takes a folder anywhere (a test copy). `use --clear` makes no project active. Operator only. |
+| `codex-hook` | Answers one OpenAI Codex hook event (JSON on stdin, one JSON object out); see Codex below. Codex runs it; the agent may not. |
+| `codex-config [--format toml\|json]` | Prints the hook configuration that makes Codex call `codex-hook`, with the absolute path of the installed `aem`. |
 | `status` | Client, project, fps, the open stage and its time, approvals (standing and stale), active overrides, the last render check, and the status-line text. |
 | `stage start <gate> [scene] [--switch]` | Opens a stage. Gates come from the client's registry entry. `--switch` first finishes the stage open for the same scene (or the whole video); `/stage` always uses it. |
 | `stage end [gate [scene]]` | Closes the named stage, or the most recently opened one. |
@@ -219,16 +221,19 @@ pane; the agent cannot press it, and `aem inbox accept`/`dismiss` from the agent
 ## Guards (`aem guard`)
 
 The plugin asks `aem guard` about every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
-`Glob`, `Grep` and `LS` call, the agent's and its subagents'. Every denial is appended to
-`events.jsonl` as a `denial` event, and its message tells the agent why and how the operator can
-approve or override.
+`Glob`, `Grep` and `LS` call, the agent's and its subagents', whether or not its own view shows a
+project: the CLI reads the active project itself, so a project made active in another session or a
+terminal is guarded from the next call (the plugin's view, which draws the status line and the
+prompt section, is refreshed every 30 seconds). Every denial is appended to `events.jsonl` as a
+`denial` event, and its message tells the agent why and how the operator can approve or override.
+MCP tools are not checked.
 
 | Rule | Denies | Limits |
 |---|---|---|
 | AEM-G01 protected file | `Write`/`Edit`/`NotebookEdit` to a protected file (the registry's `protected_files`, plus `~/.aem/active.json` and the registry itself), compared after resolving symbolic links; a `Bash` command whose text names a protected file (by path or file name), except AEM's read-only commands. | A shell command is read as text: a path assembled at run time (`f=events; echo >> $f.jsonl`), a script file that writes the ledger, or an MCP tool that writes files is not seen. Reading with the `Read` tool is allowed; `cat` of a protected file is denied as a side effect. |
 | AEM-G02 outside the client's folders | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no active project nothing is out of scope. |
 | AEM-G03 blocked command | A `Bash` command containing one of the client's `blocked_commands` (`snapshot --describe` for Joel). | Plain text match: a different spelling or a script that runs it is not seen. |
-| AEM-G04 operator-only aem command | The agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage` or `guard`, or `aem inbox accept`/`dismiss` (also as a path ending in `/aem` or `python3 -m aem`). Holds with no active project. | Calling the Python package from another script, or editing the ledgers through other means, is not seen (AEM-G01 covers the common forms). It is a text match, so it over-matches too: a command whose text only mentions one (a heredoc writing these docs, a commit message) is denied; the agent then uses the Edit tool for docs, or the operator types /allow. |
+| AEM-G04 operator-only aem command | The agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage`, `guard` or `codex-hook`, or `aem inbox accept`/`dismiss` (also as a path ending in `/aem` or `python3 -m aem`). Holds with no active project. | Calling the Python package from another script, or editing the ledgers through other means, is not seen (AEM-G01 covers the common forms). It is a text match, so it over-matches too: a command whose text only mentions one (a heredoc writing these docs, a commit message) is denied; the agent then uses the Edit tool for docs, or the operator types /allow. |
 | AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected), or names an `.fcpxml` but no render; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. |
 
 Overrides: `aem allow <target> --reason …` where the target is a rule ID (`AEM-G02`), a command
@@ -238,5 +243,31 @@ logged as `allow_used`; a standing allow is logged on every use until `aem allow
 If `aem` cannot start, the plugin lets the call through and toasts that it was not checked: the
 guards fail open so a broken install does not stop work, and the toast says so every time.
 
-These are recorded checks inside Claude Code, not security boundaries. The operator's own shell,
-another editor, Codex or any tool outside Claude Code is not checked.
+These are recorded checks inside Claude Code and, once its hooks are set up, Codex; not security
+boundaries. The operator's own shell, another editor, or Codex without the hooks is not checked.
+
+## Codex (`aem codex-hook`)
+
+OpenAI Codex 0.146 runs command hooks (feature `hooks`). `aem codex-config` prints a `[hooks]` table
+for `~/.codex/config.toml` (or `--format json` for `~/.codex/hooks.json`) that sends six events to
+`aem codex-hook`, which answers each with the same code the plugin calls:
+
+| Codex event | AEM does | Codex reads back |
+|---|---|---|
+| `SessionStart` | records `session_start` (`agent: codex`) | the AEM context text as `additionalContext`, with a note that Codex has no slash commands |
+| `UserPromptSubmit` | records `prompt` and `turn_start` | nothing |
+| `PreToolUse` (`Bash`, `apply_patch`) | the guard: a Bash command as is; a patch as one `Write` per file it adds, updates, deletes or moves, with its added lines as content (so AEM-G05 sees FCPXML media) | `permissionDecision: "deny"` with the same message as the plugin's, or nothing |
+| `PostToolUse` (`Bash`) | the render sentinel (`aem rendered`), timed from the PreToolUse of the same `tool_use_id`; a `tool_call` event when 30 s or more | the render result as `additionalContext` |
+| `Stop` | records `turn_end` | nothing |
+| `SessionEnd` | records `session_end` | nothing |
+
+Verified live with codex-cli 0.146.0 (`tests/live/codex-hooks-check.sh`): the SessionStart hook
+ran and the PreToolUse hook blocked an agent's `aem approve` with AEM-G04. The other events are
+covered by unit tests built from the shapes in Codex's hooks reference.
+
+Limits beyond the guards' own: Codex has no slash commands, toasts, status line or inbox, so the
+operator runs `aem` commands in a terminal; there is no timer, so idle time is not detected live
+(gaps appear in the report as unobserved); a hook needs the operator's trust in Codex's `/hooks`
+review before it runs, and again after it changes; a project-level `.codex/hooks.json` was not
+loaded by `codex exec` in testing, so install the hooks at user level; MCP tools are not checked;
+and Codex treats a hook that fails or cannot start as allowing the call, as the plugin does.

@@ -57,12 +57,14 @@ describe('guard', () => {
     expect(w.toasts.at(-1)).toContain('one-time /allow allow-1234')
   })
 
-  test('unguarded tools and, with no project, non-Bash tools are not put to aem guard', async ($, on) => {
+  test('unguarded tools are not checked; guarded ones are, even while the view says no project', async ($, on) => {
     const w = floor(on, withGuard(INACTIVE))
     await $.session.start(START)
-    await $.tool.call({ tool: 'Read', file_path: '/anywhere/x.md' })
     await $.tool.call({ tool: 'TaskList' } as never)
     expect(w.calls.some(c => c[1] === 'guard')).toBe(false)
+    // The view is refreshed on a timer and can lag a project made active elsewhere: the CLI decides.
+    await $.tool.call({ tool: 'Read', file_path: '/anywhere/x.md' })
+    expect(w.calls.filter(c => c[1] === 'guard').length).toBe(1)
     const r = await $.tool.call({ tool: 'Bash', command: 'aem approve x y --gate G4' })
     expect(JSON.stringify(r)).toContain('AEM-G04')
   })

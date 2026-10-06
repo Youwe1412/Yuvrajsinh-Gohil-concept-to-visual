@@ -36,7 +36,7 @@ RULES = {
     "AEM-G05": "render not approved",
 }
 
-OPERATOR_ONLY = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard")
+OPERATOR_ONLY = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard", "codex-hook")
 WRITE_TOOLS = {"Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 READ_TOOLS = {"Read": "file_path", "Glob": "path", "Grep": "path", "LS": "path"}
 
@@ -168,7 +168,8 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
                              "Ask the operator to answer it in the review inbox (/inbox).", command="inbox")
             if sub in OPERATOR_ONLY:
                 slash = {"use": "/aem use", "new-client": "/aem new-client", "stage": "/stage, /pause, /resume or /wait",
-                         "guard": "nothing (the plugin runs it)"}.get(sub, f"/{sub}")
+                         "guard": "nothing (the plugin runs it)",
+                         "codex-hook": "nothing (Codex runs it)"}.get(sub, f"/{sub}")
                 return _deny("AEM-G04", f"`aem {sub}` is the operator's command, not the agent's.",
                              f"Ask the operator to type {slash}.", command=sub)
     if ctx is None:

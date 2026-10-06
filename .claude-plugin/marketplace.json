@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "aavkar-productions",
+  "description": "Aavkar Productions' Claude Code plugins.",
+  "owner": {
+    "name": "Aavkar Productions"
+  },
+  "plugins": [
+    {
+      "name": "aavkar-educational-motion-studio",
+      "description": "Aavkar Educational Motion Studio (AEM): session context, time ledger, guards, render sentinel and review inbox for educational animation work. Needs the aem command (cli/install.sh in this repository).",
+      "source": "./plugin/aavkar-educational-motion-studio",
+      "category": "productivity",
+      "author": { "name": "Aavkar Productions" }
+    }
+  ]
+}

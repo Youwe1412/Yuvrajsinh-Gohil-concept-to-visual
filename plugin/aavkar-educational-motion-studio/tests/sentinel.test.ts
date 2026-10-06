@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { INACTIVE, NOW, START, active, floor } from './fake-aem'
+import { INACTIVE, NOW, PARTS, START, active, floor } from './fake-aem'
 import type { Reply, Router } from './fake-aem'
 
 const ALLOW: Reply = { json: { ok: true, decision: 'allow' } }
@@ -48,12 +48,17 @@ describe('render sentinel', () => {
     expect('context' in r ? r.context : undefined).toBeUndefined()
   })
 
-  test('other tools, and any tool with no project active, are not watched', async ($, on) => {
-    const w = floor(on, (args, stdin) => (args[0] === 'guard' ? ALLOW : withRendered(INACTIVE)(args, stdin)))
+  test('other tools are not watched; Bash is, and the CLI says when no project is active', async ($, on) => {
+    const none: Reply = { json: { ok: true, render: false, outputs: [], text: '', note: 'no active project' } }
+    const w = floor(on, (args, stdin) => (args[0] === 'guard' ? ALLOW : args[0] === 'rendered' ? none : INACTIVE(args, stdin)))
     await $.session.start(START)
-    await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render .' })
+    const toasts = w.toasts.length
     await $.tool.call({ tool: 'Read', file_path: '/projects/P1/renders/a.mp4' })
     expect(renderedCalls(w.calls)).toEqual([])
+    const r = await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render .' })
+    expect(renderedCalls(w.calls).length).toBe(1)
+    expect(w.toasts.length).toBe(toasts)
+    expect('context' in r ? r.context : undefined).toBeUndefined()
   })
 
   test('a render run in the background is flagged as not checked', async ($, on) => {
@@ -72,5 +77,25 @@ describe('render sentinel', () => {
     await $.session.start(START)
     await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render .' })
     expect(renderedCalls(w.calls)).toEqual([])
+  })
+
+  test('a re-render that makes an approval stale shows on the status line at once', async ($, on) => {
+    let rendered = false
+    const router: Router = (args, stdin) => {
+      if (args[0] === 'rendered') {
+        rendered = true
+        return renderedReply(stdin)
+      }
+      if (args[0] === 'status') {
+        return { json: { ok: true, active: true, statusline_parts: { ...PARTS, gate: 'G4', stale: rendered ? 1 : 0 } } }
+      }
+      return withRendered(active())(args, stdin)
+    }
+    const w = floor(on, router)
+    await $.session.start(START)
+    expect(w.statuses.at(-1)).not.toContain('stale')
+    await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render . -o renders/a_v02.mp4' })
+    expect(w.statuses.at(-1)).toContain('· 1 stale')
+    expect(w.toasts.at(-1)).toContain('1 approval(s) now stale')
   })
 })

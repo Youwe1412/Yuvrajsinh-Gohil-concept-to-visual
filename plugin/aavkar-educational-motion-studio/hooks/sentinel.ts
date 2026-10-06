@@ -12,8 +12,9 @@ export const SENTINEL_TIMEOUT_MS = 600_000
 
 type Rendered = { render?: boolean; toast?: string; text?: string; failed?: number }
 
+// Every Bash call is watched: the CLI knows whether a project is active (the plugin's view can lag).
 export async function sentinelBefore(io: Io, tool: string): Promise<number | undefined> {
-  if (tool !== 'Bash' || !(await io.getView()).active) return undefined
+  if (tool !== 'Bash') return undefined
   return io.now()
 }
 

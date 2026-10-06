@@ -42,12 +42,10 @@ export async function contextStart(io: Io, options: PluginOptions): Promise<void
 }
 
 // Every 30 s: stage time ticks locally; every sixth tick the CLI is read again for outside changes.
-export async function contextTick(io: Io, options: PluginOptions, tick: number): Promise<void> {
-  if (tick % 6 === 0) {
-    await refresh(io, options)
-    return
-  }
-  io.status(statusLine(await io.getView(), await io.now()))
+// Every tick (30 s) re-reads `aem status`: the active project, stage and approvals can change from
+// another session, the operator's terminal or Codex, and the status line should follow within a tick.
+export async function contextTick(io: Io, options: PluginOptions, _tick: number): Promise<void> {
+  await refresh(io, options)
 }
 
 export async function contextCompose(io: Io, sections: readonly PromptComposeSection[]): Promise<PromptComposeSection[]> {
