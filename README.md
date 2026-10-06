@@ -33,6 +33,8 @@ stops the common mistakes; it does not stop a determined person. Each guard's ex
 
 ## Start here
 
+- [docs/ABOUT.md](docs/ABOUT.md): the whole picture: why, every part, how it should be used,
+  limits, and where things stand.
 - [docs/INSTALL.md](docs/INSTALL.md): install the command, the plugin (as a marketplace) and the
   Codex hooks.
 - [docs/OPERATOR.md](docs/OPERATOR.md): day-to-day use, for whoever runs the studio.
@@ -46,7 +48,7 @@ stops the common mistakes; it does not stop a determined person. Each guard's ex
 | `plugin/aavkar-educational-motion-studio/` | The Claude Code plugin: `hooks/` (one module, `register.tsx`, dispatching to `context`, `ledger`, `guard`, `sentinel`, `inbox`), `types/`, `tests/` |
 | `.claude-plugin/marketplace.json` | Makes this repository a Claude Code plugin marketplace (`aavkar-productions`) |
 | `registry/` | `clients.json` and `client-template/`, the files a new client needs |
-| `docs/` | `INSTALL.md`, `OPERATOR.md`, `CLI.md`, `ACCEPTANCE.md` |
+| `docs/` | `ABOUT.md` (the whole picture), `INSTALL.md`, `OPERATOR.md`, `CLI.md` |
 | `tests/` | CLI unit tests; `acceptance/` (the end-to-end run's operator steps and placement stand-in); `live/codex-hooks-check.sh` |
 
 ## Tests
