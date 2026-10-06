@@ -66,7 +66,7 @@ def build(ctx: Context) -> dict:
     if integ["findings"]:
         lines.append(f"- AEM integrity: {integ['findings']} ledger difference(s) in {', '.join(integ['files'])} were not "
                      f"written by AEM (`aem integrity` lists them). Tell {op}; only {op} accepts them (`/accept-edit`).")
-    rec = recall.recall(c)
+    rec = recall.recall(c, ctx.project)
     lines += ["", rec["text"]]
     return {"active": True, "text": "\n".join(lines), "preferences": rec["preferences"], "recall": rec,
             "record_files": record_files(ctx), "skill": c.skill, "decisions_file": str(c.decisions_path),

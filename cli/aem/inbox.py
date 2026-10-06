@@ -27,7 +27,7 @@ DEFAULTS = {
     "gates": {"plan_row": "G2", "still": "G3", "render": "G4"},
     "reviews_dir": "reviews",
 }
-RULINGS = ("keep", "change", "remove")
+RULINGS = ("keep", "change", "remove", "note")  # note: a video-level comment, recorded as a remark
 
 
 def settings(ctx: Context) -> dict:
@@ -71,10 +71,11 @@ def append_case(ctx: Context, *, item_kind: str, item: str, ruling: str | None, 
         "critic_agreed": None,
         "notes": (f"Ours: the operator's ruling in the AEM review inbox, not {ctx.client.contact}'s. "
                   + (f"Reason: {reason.strip()}" if reason and reason.strip() else "No reason given.")),
-        # AEM's additions: what was reviewed and at which gate.
+        # AEM's additions: what was reviewed and at which gate, and that the ruling is ours, not the client's.
         "item_kind": item_kind,
         "gate": gate,
         "reason": reason.strip() if reason else None,
+        "level": "operator",
     }
     if decision:
         case["decision"] = decision
@@ -189,11 +190,14 @@ def items(ctx: Context) -> list[dict]:
                     continue
                 words = d.get(wf) or []
                 said = " / ".join(words) if isinstance(words, list) else str(words)
-                acts = [{"label": r.capitalize(), "argv": ["inbox", "accept", ref, "--ruling", r, "--label"], "needs_reason": False}
-                        for r in RULINGS]
-                out.append(_item(ref, "client_comment", d.get("shot") or "?", None, title=f"{d.get('shot')}: {ctx.client.contact} said",
+                video_level = d.get("level") == "video" or not d.get("shot")
+                choices = [("Record", "note")] if video_level else [(r.capitalize(), r) for r in ("keep", "change", "remove")]
+                acts = [{"label": label, "argv": ["inbox", "accept", ref, "--ruling", r, "--label"], "needs_reason": False}
+                        for label, r in choices]
+                out.append(_item(ref, "client_comment", d.get("shot") or "video", None,
+                                 title=f"{d.get('shot') or 'the video'}: {ctx.client.contact} said",
                                  detail=said, approve=None, reject=["inbox", "dismiss", ref, "--label"], actions=acts,
-                                 words_from=d.get("source")))
+                                 words_from=d.get("source"), level="video" if video_level else "explicit"))
     return out
 
 
@@ -216,8 +220,10 @@ def _find(ctx: Context, ref: str) -> dict:
 
 
 def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | None = None) -> dict:
-    """Accept an imported client comment as the client's ruling on the shot."""
+    """Accept an imported client comment: the client's explicit ruling on its moment (keep, change, remove), or a
+    video-level remark (note). The words stay the client's, verbatim from the CSV; the operator only reads them."""
     operator.assert_checked("inbox accept")
+    from . import moments as momentsmod, rulings
     if ruling not in RULINGS:
         raise AemError(f"ruling must be one of {', '.join(RULINGS)}")
     it = _find(ctx, ref)
@@ -226,24 +232,41 @@ def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | No
     fname, n = ref.split(":", 1)[1].rsplit("#", 1)
     draft = read_jsonl(ctx.project_dir / settings(ctx)["reviews_dir"] / ctx.client.id / fname)[int(n) - 1]
     wf = words_field(ctx)
-    item = approvals.item_from_path(Path(draft.get("shot") or "?"))
-    a = approvals.latest_approval(approvals.read(ctx), item)
+    video_level = draft.get("level") == "video" or not draft.get("shot")
+    if video_level != (ruling == "note"):
+        raise AemError("a comment on a moment takes keep, change or remove; a comment on the video takes note")
+    index = momentsmod.read_index(ctx) or momentsmod.build(ctx)
+    m = None if video_level else momentsmod.find(index, draft.get("moment") or draft.get("shot"))
+    item = (m or {}).get("id") or draft.get("shot") or "video"
+    a = approvals.latest_approval(approvals.read(ctx), item) if not video_level else None
     sha = draft.get("render_sha256") or (a or {}).get("render_sha256")
+    version = None
+    if a and a.get("render"):
+        version = momentsmod.version_of(Path(a["render"]))
+    if not sha and m and m.get("renders"):  # no approval on record: the moment's latest render is what was delivered
+        latest = m["renders"][-1]
+        rp = ctx.project_dir / latest["path"]
+        if rp.is_file():
+            sha, version = sha256_file(rp), latest["version"]
     words = draft.get(wf)
     case = None
     if label:
-        status = "labelled" if (words and sha) else "development case"
         notes = (f"Ours: {ctx.client.contact}'s words are verbatim from the review CSV ({draft.get('source')}); "
                  f"the operator read them as '{ruling}' in the AEM review inbox."
                  + (f" Reason: {reason.strip()}" if reason and reason.strip() else "")
-                 + ("" if sha else " No approved render found for the shot, so no SHA-256: a development case."))
-        extra = {wf: words, "word_ids": draft.get("word_ids"), "words_source": draft.get("source"),
-                 "status": status, "notes": notes}
-        case = append_case(ctx, item_kind="client_comment", item=draft.get("shot") or item, ruling=ruling,
-                           reason=reason, sha=sha, decision="accepted", inbox_ref=ref, extra=extra)
-    ev = ledger.record(ctx, "inbox_resolved", scene=it["item"], note=f"accepted as {ruling}", fill_stage=False,
-                       inbox_ref=ref, decision="accepted", ruling=ruling, case_id=(case or {}).get("case_id"),
-                       source="aem inbox accept")
+                 + ("" if sha or video_level else " No approved render found for the moment, so no SHA-256: a development case."))
+        case = rulings.make_case(ctx, level="video" if video_level else "explicit",
+                                 ruling=None if video_level else ruling, words=words, source=str(draft.get("source")),
+                                 moment=m, index=index, render_sha256=sha, version=version, notes=notes,
+                                 extra={"word_ids": draft.get("word_ids") or (m or {}).get("word_ids") or [],
+                                        "words_source": draft.get("source"), "ruled_by": ctx.client.operator_id,
+                                        "decision": "accepted", "inbox_ref": ref, "item_kind": "client_comment"})
+        if not m and not video_level:
+            case["shot"] = draft.get("shot")
+        rulings.append(ctx, case, by="aem inbox")
+    ev = ledger.record(ctx, "inbox_resolved", scene=None if video_level else it["item"], note=f"accepted as {ruling}",
+                       fill_stage=False, inbox_ref=ref, decision="accepted", ruling=ruling,
+                       case_id=(case or {}).get("case_id"), source="aem inbox accept")
     return {"ok": True, "id": ref, "ruling": ruling, "event": ev, "case": case}
 
 

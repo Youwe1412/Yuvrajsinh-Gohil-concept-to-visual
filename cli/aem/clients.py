@@ -18,12 +18,28 @@ SCOPES = ("channel", "video", "instance")
 HOW_TYPED = {"terminal": "in a terminal", "slash command": "with /client-said in Claude Code"}
 
 
-def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str | None = None) -> dict:
-    """Add a dated entry to the client's decisions file: the quote exactly as typed, and who typed it."""
+def client_said(ctx: Context, quote: str, *, scope: str | None, source: str, item: str | None = None,
+                about: str | None = None, ruling: str | None = None) -> dict:
+    """Add a dated entry to the client's decisions file: the quote exactly as typed, and who typed it. With --about
+    (a moment, `video` or `channel`) the quote is also the client's ruling at that level in the labelled cases."""
     operator.assert_checked("client-said")
     quote = quote.rstrip("\n")
     if not quote.strip():
         raise AemError("no quote on standard input", hint="Paste the client's exact words, then end input.")
+    if ruling and not about:
+        raise AemError("--ruling goes with --about <moment>: it is the client's keep, change or remove on that moment")
+    if about:
+        derived = about if about in ("video", "channel") else "instance"
+        if scope and scope != derived:
+            raise AemError(f"--about {about} is a {derived}-level quote; leave --scope out or make it {derived}")
+        scope = derived
+        if derived == "instance":
+            item = item or about
+    if not scope:
+        raise AemError("client-said needs --scope channel|video|instance, or --about <moment|video|channel>")
+    if about:  # what --about names is checked before anything is written
+        from . import rulings
+        rulings.check_about(ctx, about, ruling)
     scopes = ctx.client.raw.get("decision_scopes", SCOPES)
     if scope not in scopes:
         raise AemError(f"scope must be one of {', '.join(scopes)}")
@@ -73,9 +89,14 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
     integrity.note_insert(path, original, at, block, by="aem client-said")
     ledger.record(ctx, "client_said", note=f"{scope} · {source}", fill_stage=True,
                   quote_sha256=sha256_text(quote), decisions_file=str(path), typed_by=ctx.client.operator,
-                  via=operator.via(), source="aem client-said")
+                  via=operator.via(), about=about, ruling=ruling, source="aem client-said")
+    case = None
+    if about:
+        from . import rulings
+        case = rulings.about(ctx, about, quote, ruling=ruling, source=source)
     return {"ok": True, "file": str(path), "placed": placed, "heading": heading, "scope": scope,
-            "quote_sha256": sha256_text(quote), "entered_by": ctx.client.operator, "via": operator.via()}
+            "quote_sha256": sha256_text(quote), "entered_by": ctx.client.operator, "via": operator.via(),
+            "about": about, "case": case}
 
 
 # --- new-client --------------------------------------------------------------------------

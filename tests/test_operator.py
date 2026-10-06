@@ -1,8 +1,8 @@
 """Operator-only commands: the commands that write the record are refused by the CLI itself, not by matching
 shell text, unless the operator is running them (their terminal, or a slash command's one-time nonce).
 
-These are the only commands the agent cannot run (1.0.0): approve, reject, client-said, stage, accept-edit,
-new-client, inbox accept and dismiss. The refusal is one line, and the agent asks the operator. Everything else,
+These are the only commands the agent cannot run (1.0.0; accept-video from 1.1.0): approve, reject, client-said,
+stage, accept-edit, accept-video, new-client, inbox accept and dismiss. The refusal is one line, and the agent asks the operator. Everything else,
 `aem use` included, is open.
 """
 import json
@@ -25,6 +25,8 @@ OPERATOR_COMMANDS = [
     ("reject", "x", "--reason", "r"),
     ("client-said", "--scope", "video", "--source", "email"),
     ("accept-edit",),
+    ("accept-video", "v01", "--source", "Frame.io, 12 Oct 2026"),
+    ("client-said", "--about", "channel", "--source", "WhatsApp"),
     ("new-client", "beta", "--name", "Beta", "--design-system", "/nonexistent/ds", "--projects-root", "/nonexistent"),
     ("inbox", "accept", "x", "--ruling", "keep"),
     ("inbox", "dismiss", "x", "--reason", "r"),
@@ -43,9 +45,10 @@ class Refused(WorldCase):
 
     def test_the_list_is_exactly_the_commands_that_write_the_record(self):
         self.assertEqual(sorted(operator.OPERATOR_COMMANDS),
-                         ["accept-edit", "approve", "client-said", "new-client", "reject", "stage"])
+                         ["accept-edit", "accept-video", "approve", "client-said", "new-client", "reject", "stage"])
         self.assertEqual(operator.OPERATOR_INBOX_ACTIONS, ("accept", "dismiss"))
-        for open_ in ("use", "status", "observe", "recall", "rendered", "integrity", "report", "check-approval"):
+        for open_ in ("use", "status", "observe", "recall", "rendered", "integrity", "report", "check-approval",
+                      "moments", "evidence", "calibrate", "import-review"):
             self.assertIsNone(operator.command_name(open_), open_)
 
     def test_the_refusal_is_one_line(self):

@@ -3,7 +3,7 @@
 These are the commands that write the record, and the only commands an agent cannot run:
 
     approve  reject  client-said  stage (every action, including the plugin's `stage auto`)
-    accept-edit  new-client  inbox accept  inbox dismiss
+    accept-edit  accept-video  new-client  inbox accept  inbox dismiss
 
 They are what makes the record the operator's: an approval, a rejection, the client's words, a stage, an
 accepted ledger edit. Everything else (reading, checking, rendering, recording what the agent did) is open.
@@ -44,7 +44,7 @@ NONCE_VAR = "AEM_OPERATOR_NONCE"
 NONCE_TTL_S = 60
 
 # The commands that write the record. `inbox` is operator-only for these actions; listing it is open.
-OPERATOR_COMMANDS = ("stage", "approve", "reject", "client-said", "accept-edit", "new-client")
+OPERATOR_COMMANDS = ("stage", "approve", "reject", "client-said", "accept-edit", "accept-video", "new-client")
 OPERATOR_INBOX_ACTIONS = ("accept", "dismiss")
 
 # Set in the environment of a process that an AI agent started: Claude Code's Bash tool and Codex's shell.

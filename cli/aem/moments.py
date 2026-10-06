@@ -72,7 +72,11 @@ TREATMENTS = [
 
 
 def settings(ctx: Context) -> dict:
-    return {**DEFAULTS, **(ctx.client.raw.get("moments") or {}), **(ctx.project_settings().get("moments") or {})}
+    cfg = {**DEFAULTS, **(ctx.client.raw.get("moments") or {}), **(ctx.project_settings().get("moments") or {})}
+    own = ctx.project_settings().get("placements")  # aem.project.json's placements file comes first
+    if own:
+        cfg["placement_files"] = [own] + [f for f in cfg["placement_files"] if f != own]
+    return cfg
 
 
 def profile(ctx: Context) -> dict:
@@ -348,19 +352,26 @@ def video_cases(ctx: Context) -> list[dict]:
     return out
 
 
-def case_level(c: dict) -> str | None:
+def case_level(c: dict, operator_id: str | None = None) -> str | None:
+    """explicit, implicit, video, channel; "operator" for the operator's own ruling in the review inbox (ours, never
+    the client's); None for a line that is no ruling. Lines written before 1.1.0 carry no level: a keep, change or
+    remove that is not the operator's is explicit."""
     if c.get("level"):
         return c["level"]
+    if (operator_id and c.get("source") == operator_id) or c.get("item_kind") in ("plan_row", "still", "render", "override"):
+        return "operator"
     if c.get("ruling") in ("keep", "change", "remove"):
         return "explicit"
     return None
 
 
-def ruling_of(cases: list[dict]) -> dict | None:
+def ruling_of(cases: list[dict], operator_id: str | None = None) -> dict | None:
     """The client's ruling on a moment at its level: an explicit one beats an implicit acceptance."""
     by = {"explicit": [], "implicit": []}
     for c in cases:
-        lvl = case_level(c)
+        lvl = case_level(c, operator_id)
+        if lvl == "explicit" and c.get("ruling") not in ("keep", "change", "remove"):
+            continue  # the client's words on the moment with no keep, change or remove: a remark, not a ruling
         if lvl in by:
             by[lvl].append(c)
     for lvl in ("explicit", "implicit"):
@@ -498,7 +509,7 @@ def build(ctx: Context) -> dict:
         owner = next((m for m in moments if c.get("moment") == m["id"] or _matches(shot, m)), None)
         if owner:
             case_moment.setdefault(owner["id"], []).append(c)
-        elif case_level(c) in ("explicit", "implicit"):
+        elif case_level(c, ctx.client.operator_id) in ("explicit", "implicit"):
             unlinked.append(f"labelled case {c.get('case_id')} names {c.get('moment') or c.get('shot')}, which is no moment")
     times, loose_time = stage_time(ctx, moments)
     for m in moments:
@@ -512,7 +523,7 @@ def build(ctx: Context) -> dict:
             st = approvals.approval_state(lines, a)
             m["approval"] = {"gate": a.get("gate"), "render": a.get("render"), "date": a.get("date"),
                              "standing": st["standing"], "why": st["why"]}
-        m["ruling"] = ruling_of(case_moment.get(m["id"], []))
+        m["ruling"] = ruling_of(case_moment.get(m["id"], []), ctx.client.operator_id)
         m["critic"] = critic_findings(ctx, m["id"])
         m["time"] = times.get(m["id"])
         if not m["renders"] and m.get("treatment") in ("animation", None) and m.get("asset"):
@@ -574,7 +585,7 @@ def counts(ctx: Context, index: dict | None = None) -> dict | None:
             approved += 1
         mine = [c for c in cases if c.get("moment") == m["id"]
                 or _matches(item_of(Path(str(c.get("moment") or c.get("shot") or ""))), m)]
-        if ruling_of(mine):
+        if ruling_of(mine, ctx.client.operator_id):
             ruled += 1
     return {"moments": len(index["moments"]), "approved": approved, "ruled": ruled}
 

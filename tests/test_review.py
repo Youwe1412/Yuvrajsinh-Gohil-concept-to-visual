@@ -46,7 +46,9 @@ class ImportReview(WorldCase):
         self.assertEqual(by_row[3]["shot"], "teach-opening")
         self.assertEqual(by_row[3]["word_ids"], ["w3"])
         self.assertIsNone(by_row[4]["shot"])
-        self.assertTrue(by_row[4]["about"].startswith("edit"))
+        self.assertEqual((by_row[4]["level"], by_row[4]["moments"]), ("video", []))  # on no moment: about the video
+        self.assertTrue(by_row[4]["about"].startswith("the video or the edit"))
+        self.assertEqual((by_row[2]["level"], by_row[2]["moment"]), ("explicit", "next-token"))
         self.assertEqual(by_row[5]["frame"], 129 * 24 + 23)
         self.assertEqual(by_row[5]["shot"], "next-token")
         self.assertEqual(by_row[5]["comment"], 'Two notes:\nfirst, slower; second, "brighter"')  # verbatim
@@ -58,7 +60,9 @@ class ImportReview(WorldCase):
         rulings = Path(d["files"]["rulings"]).read_text()
         self.assertIn("| statistical-middle | - | pending (no comment) |", rulings)
         drafts = [json.loads(l) for l in Path(d["files"]["drafts"]).read_text().splitlines()]
-        self.assertEqual({c["shot"] for c in drafts}, {"next-token", "teach-opening"})
+        self.assertEqual({c["shot"] for c in drafts}, {"next-token", "teach-opening", None})
+        remark = [c for c in drafts if c["shot"] is None][0]  # the comment on no moment: a video-level remark
+        self.assertEqual((remark["level"], remark["moment"], remark["ruling"]), ("video", None, None))
         nt = [c for c in drafts if c["shot"] == "next-token"][0]
         self.assertEqual(nt["acme_words"], ["Love this one, keep it", 'Two notes:\nfirst, slower; second, "brighter"'])
         self.assertIsNone(nt["ruling"])

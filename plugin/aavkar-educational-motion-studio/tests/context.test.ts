@@ -67,6 +67,16 @@ describe('context', () => {
     expect(w.calls).toContainEqual(['aem', 'moments'])
   })
 
+  test('/aem calibrate prints the CLI text and writes nothing', async ($, on) => {
+    const w = floor(on, active({ calibrate: { text: 'AEM calibrate · MergeToMaster (joel)' } }))
+    await $.session.start(START)
+    const out = await $.command.run({ command: 'aem', args: 'calibrate joel', origin: COMPOSER, presentation: PRESENTATION })
+    expect(out.text).toBe('AEM calibrate · MergeToMaster (joel)')
+    expect(w.calls).toContainEqual(['aem', 'calibrate', 'joel'])
+    const at = w.calls.findIndex(c => c[1] === 'calibrate')
+    expect(w.envs[at]?.AEM_OPERATOR_NONCE).toBeUndefined()
+  })
+
   test('/aem recall prints the CLI text', async ($, on) => {
     const w = floor(on, active({ recall: { text: 'AEM recall · Acme' } }))
     await $.session.start(START)

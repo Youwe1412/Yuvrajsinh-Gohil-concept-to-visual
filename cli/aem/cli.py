@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, codex, context, doctor, drift, evidence, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, sentinel
+from . import VERSION, approvals, calibrate, clients, codex, context, doctor, drift, evidence, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, rulings, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -41,7 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("context", help="the text the Claude Code plugin adds to the system prompt")
     _common(p)
 
-    p = sub.add_parser("recall", help="one screen on a client for a new session: preferences, last rulings, open questions, labelled cases")
+    p = sub.add_parser("calibrate", help="what the client's rulings say: acceptance per video, critic agreement, rules")
+    p.add_argument("client_id", metavar="client", nargs="?", help="client id (default: the resolved client)")
+    _common(p)
+
+    p = sub.add_parser("recall", help="one screen on a client for a new session: how they review, direction, what they changed "
+                                     "last time, channel-level rulings, preferences, last rulings, open questions, labelled cases")
     p.add_argument("client_id", metavar="client", nargs="?", help="client id (default: the resolved client)")
     _common(p)
 
@@ -85,9 +90,17 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
 
     p = sub.add_parser("client-said", help="record the client's exact words (read from stdin) in the decisions file (operator only)")
-    p.add_argument("--scope", required=True, choices=list(clients.SCOPES))
+    p.add_argument("--scope", choices=list(clients.SCOPES), help="channel, video or instance (implied by --about)")
     p.add_argument("--source", required=True, help="where the words came from (Frame.io, WhatsApp, email)")
     p.add_argument("--item", help="the shot, for an instance-scope entry")
+    p.add_argument("--about", metavar="MOMENT|video|channel",
+                   help="also record the quote as the client's ruling at that level (labelled cases)")
+    p.add_argument("--ruling", choices=["keep", "change", "remove"], help="with --about <moment>: what the words rule")
+    _common(p)
+
+    p = sub.add_parser("accept-video", help="the client accepted the delivered cut: implicit acceptance for every moment they did not comment on (operator only)")
+    p.add_argument("version", help="the delivered version, e.g. v08")
+    p.add_argument("--source", required=True, help="where the acceptance came from, e.g. \"Frame.io, 12 Oct\"")
     _common(p)
 
     p = sub.add_parser("inbox", help="what is waiting on the operator: list | accept <id> --ruling R | dismiss <id> --reason")
@@ -132,7 +145,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("csv")
     p.add_argument("--fps", help="the reviewed file's rate as N/D, if it differs from the project's")
     p.add_argument("--start-tc", help="timecode of the reviewed file's first frame (default 00:00:00:00)")
-    p.add_argument("--placements", help="JSON of shot placements (default: aem.project.json, data/placements.json, data/edit.json)")
     p.add_argument("--window-s", type=float, default=1.0)
     p.add_argument("--notes", action="store_true",
                    help="the client's timestamped notes on the rough cut (which moments were asked), not a review")
@@ -299,13 +311,25 @@ def cmd_context(a):
     return data, data["text"]
 
 
-def cmd_recall(a):
+def cmd_calibrate(a):
     if a.client_id:
         reg = registry.load_registry(registry.registry_path(getattr(a, "registry", None)))
         client = registry.find_client(reg, a.client_id)
     else:
         client = registry.context(a, require_project=False).client
-    r = recall.recall(client)
+    r = calibrate.calibrate(client, getattr(a, "registry", None))
+    return r, r["text"]
+
+
+def cmd_recall(a):
+    project = None
+    if a.client_id:
+        reg = registry.load_registry(registry.registry_path(getattr(a, "registry", None)))
+        client = registry.find_client(reg, a.client_id)
+    else:
+        ctx = registry.context(a, require_project=False)
+        client, project = ctx.client, ctx.project
+    r = recall.recall(client, project)
     return r, r["text"]
 
 
@@ -360,8 +384,25 @@ def cmd_reject(a):
 def cmd_client_said(a):
     ctx = registry.context(a)
     quote = sys.stdin.read()
-    r = clients.client_said(ctx, quote, scope=a.scope, source=a.source, item=a.item)
-    return r, f"Recorded in {r['file']} ({r['placed']}): {r['heading']}"
+    r = clients.client_said(ctx, quote, scope=a.scope, source=a.source, item=a.item, about=a.about, ruling=a.ruling)
+    text = f"Recorded in {r['file']} ({r['placed']}): {r['heading']}"
+    if r.get("case"):
+        c = r["case"]
+        text += f"\n  and as a {c['level']} ruling" + (f" ({c['ruling']})" if c.get("ruling") else "") + \
+                (f" on {c['moment']}" if c.get("moment") else "") + f" in the labelled cases ({c['case_id']})"
+    return r, text
+
+
+def cmd_accept_video(a):
+    ctx = registry.context(a)
+    r = rulings.accept_video(ctx, a.version, a.source)
+    text = (f"{r['version']} accepted ({r['source']}): {r['implicit_written']} implicit acceptance(s) written; "
+            f"{len(r['explicit'])} moment(s) keep their explicit ruling")
+    if r["already_accepted"]:
+        text += f"; {len(r['already_accepted'])} already accepted at {r['version']}"
+    if r["no_render_at_version"]:
+        text += f"\n  no render file at {r['version']} for: {', '.join(r['no_render_at_version'])}"
+    return r, text
 
 
 def cmd_integrity(a):
@@ -455,7 +496,7 @@ def cmd_import_review(a):
         if r["unreadable"]:
             text += f"\n  {r['unreadable']} row(s) could not be read"
         return r, text
-    r = review.import_review(ctx, a.csv, fps_override=a.fps, start_tc=a.start_tc, placements=a.placements, window_s=a.window_s)
+    r = review.import_review(ctx, a.csv, fps_override=a.fps, start_tc=a.start_tc, window_s=a.window_s)
     text = (f"{r['comments']} comments at {r['fps']}: {r['mapped_to_shots']} on shots, {r['about_edit']} about the edit, "
             f"{r['unreadable']} unreadable.\n" + "\n".join(f"  {k}: {v}" for k, v in r["files"].items()))
     if r["shots_pending"]:
@@ -553,8 +594,10 @@ def cmd_new_client(a):
 
 
 COMMANDS = {
-    "use": cmd_use, "status": cmd_status, "context": cmd_context, "recall": cmd_recall, "stage": cmd_stage,
-    "report": cmd_report, "moments": cmd_moments, "evidence": cmd_evidence, "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
+    "use": cmd_use, "status": cmd_status, "context": cmd_context, "recall": cmd_recall, "calibrate": cmd_calibrate,
+    "stage": cmd_stage,
+    "report": cmd_report, "moments": cmd_moments, "evidence": cmd_evidence, "accept-video": cmd_accept_video,
+    "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
     "check-approval": cmd_check_approval, "check-render": cmd_check_render, "import-review": cmd_import_review,
     "integrity": cmd_integrity, "accept-edit": cmd_accept_edit, "doctor": cmd_doctor, "drift": cmd_drift, "observe": cmd_observe,
     "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,

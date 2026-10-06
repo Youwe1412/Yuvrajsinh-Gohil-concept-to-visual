@@ -20,7 +20,7 @@ export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean; env?
 // The aem commands that write the record, the only ones the operator alone runs. The CLI refuses them unless the
 // operator is shown to be running them (cli/aem/operator.py); this plugin is how a slash command (and the delivery
 // confirmation's Deliver) shows it: a one-time nonce.
-const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['stage', 'approve', 'reject', 'client-said', 'new-client', 'accept-edit'])
+const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['stage', 'approve', 'reject', 'client-said', 'new-client', 'accept-edit', 'accept-video'])
 
 export function isOperatorCommand(args: readonly string[]): boolean {
   const [cmd, action] = args

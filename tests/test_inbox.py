@@ -107,10 +107,14 @@ class Inbox(WorldCase):
         self.w.run("import-review", str(FIX / "frameio-sample.csv"), check=True)
         before = self.cases_path.read_bytes()
         comments = {i["item"]: i for i in self.items().values() if i["kind"] == "client_comment"}
-        self.assertEqual(sorted(comments), ["next-token", "teach-opening"])
+        self.assertEqual(sorted(comments), ["next-token", "teach-opening", "video"])
         self.assertEqual(self.cases_path.read_bytes(), before)  # listing writes nothing
         c = comments["teach-opening"]
+        self.assertEqual(c["level"], "explicit")
         self.assertEqual([a["label"] for a in c["actions"]], ["Keep", "Change", "Remove", "Reject"])
+        # A comment on no moment is about the video: it is recorded as a remark, never as keep, change or remove.
+        self.assertEqual(comments["video"]["level"], "video")
+        self.assertEqual([a["label"] for a in comments["video"]["actions"]], ["Record", "Reject"])
         self.assertIn("Can we lose the caption under the button?", c["detail"])
 
         # An approved render of the shot gives the case its SHA-256, so it is labelled.
@@ -119,15 +123,21 @@ class Inbox(WorldCase):
         self.w.run("approve", "teach-opening", str(r), "--gate", "G6", check=True)
         self.press(c, "Change")
         case = self.cases()[-1]
-        self.assertEqual((case["status"], case["ruling"], case["source"], case["decision"]),
-                         ("labelled", "change", "yuvraj", "accepted"))
+        self.assertEqual((case["status"], case["ruling"], case["level"], case["ruled_by"], case["decision"]),
+                         ("labelled", "change", "explicit", "yuvraj", "accepted"))
         self.assertEqual(case["acme_words"], ["Can we lose the caption under the button? It says what we can already see"])
+        self.assertTrue(case["source"].startswith("reviews/acme/"))  # where the words came from, as the field means
         self.assertTrue(case["words_source"].startswith("reviews/acme/"))
         self.assertEqual(len(case["render_sha256"]), 64)
+        self.assertEqual((case["moment"], case["version"]), ("teach-opening", "v01"))
 
         self.press(comments["next-token"], "Reject", reason="mapped to the wrong shot")
-        self.assertEqual([i for i in self.items().values() if i["kind"] == "client_comment"], [])
         self.assertEqual(self.cases()[-1]["decision"], "dismissed")
+        self.press(comments["video"], "Record")
+        remark = self.cases()[-1]
+        self.assertEqual((remark["level"], remark["ruling"], remark["moment"], remark["status"]),
+                         ("video", None, None, "development case"))
+        self.assertEqual([i for i in self.items().values() if i["kind"] == "client_comment"], [])
 
     def test_dismiss_needs_reason_and_ids_must_exist(self):
         code, d = self.w.run("inbox", "dismiss", "comment:none.jsonl#9", "--reason", "x")

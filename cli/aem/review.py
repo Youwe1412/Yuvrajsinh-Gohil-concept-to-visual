@@ -69,36 +69,6 @@ def parse_time(value: str, fps: Fraction) -> int:
     return fpsmod.timecode_to_frame(v, fps)
 
 
-def load_placements(ctx: Context, explicit: str | None, fps: Fraction) -> tuple[list[dict], str | None]:
-    """Shots on the delivered timeline: [{shot, start_frame, end_frame}] in frames."""
-    candidates = []
-    if explicit:
-        candidates.append(Path(explicit))
-    settings = ctx.project_settings()
-    if settings.get("placements"):
-        candidates.append(ctx.project_dir / settings["placements"])
-    candidates += [ctx.project_dir / "data" / "placements.json", ctx.project_dir / "data" / "edit.json"]
-    for c in candidates:
-        if not c.exists():
-            continue
-        data = json.loads(c.read_text(encoding="utf-8"))
-        rows = data.get("placements", data.get("shots")) if isinstance(data, dict) else data
-        out = []
-        for r in rows or []:
-            shot = r.get("shot") or r.get("name") or r.get("master")
-            if r.get("start_frame") is not None:
-                a = int(r["start_frame"])
-                b = a + int(r.get("frames", r.get("duration_frames", 0)))
-            elif r.get("start") is not None:
-                a = fpsmod.seconds_to_frame(r["start"], fps)
-                b = fpsmod.seconds_to_frame(Fraction(str(r["start"])) + Fraction(str(r.get("duration", 0))), fps)
-            else:
-                continue
-            out.append({"shot": shot, "start_frame": a, "end_frame": b})
-        return out, rel_to(c, ctx.project_dir)
-    return [], None
-
-
 def load_words(ctx: Context) -> tuple[list[dict], str | None]:
     """Word IDs with start times in seconds, from data/words.json or a whisper.cpp JSON."""
     for rel in ("data/words.json", "data/narration-words.json"):
@@ -202,7 +172,7 @@ def import_notes(ctx: Context, csv_path: str, *, fps_override: str | None = None
 
 
 def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = None, start_tc: str | None = None,
-                  placements: str | None = None, window_s: float = 1.0) -> dict:
+                  window_s: float = 1.0) -> dict:
     src = Path(csv_path).expanduser().resolve()
     if not src.is_file():
         raise AemError(f"CSV not found: {src}")
@@ -222,8 +192,28 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
                        hint="Check the export; AEM reads the header row and never assumes column names.")
     offset = fpsmod.timecode_to_frame(start_tc, fps) if start_tc else 0
 
-    shots, placements_src = load_placements(ctx, placements, fps)
+    from . import moments as momentsmod
+    index = momentsmod.build(ctx)
+    momentsmod.write(ctx, index)
+    window = float(momentsmod.profile(ctx).get("note_window_s", window_s))
     words, words_src = load_words(ctx)
+
+    def moments_at(secs: float, end: float | None = None) -> list[dict]:
+        """The moments a comment is on: those whose word span lies within the profile's window of its time (or of
+        its range, for a comment with an out point), the one it overlaps most (or is closest to) first. The same
+        rule as note coverage, so a comment maps to the moments it would be said to have asked for."""
+        end = secs if end is None or end < secs else end
+        hits = []
+        for m in index["moments"]:
+            span = m.get("word_span")
+            if not span:
+                continue
+            a, b = span
+            overlap = min(end, b) - max(secs, a)  # negative: the gap between them
+            if overlap >= -window:
+                hits.append((overlap, m))
+        hits.sort(key=lambda h: -h[0])
+        return [m for _, m in hits]
 
     comments = []
     for n, row in enumerate(body, 2):
@@ -244,11 +234,21 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
             comments.append(entry)
             continue
         secs = float(fpsmod.frame_to_seconds(frame, fps))
-        hit = [s["shot"] for s in shots if s["start_frame"] <= frame < s["end_frame"]]
-        near = [w["id"] for w in words if abs(w["start"] - secs) <= window_s]
-        entry.update(frame=frame, seconds=round(secs, 4), shot=hit[0] if hit else None,
-                     also_overlapping=hit[1:] or None, word_ids=near,
-                     about="shot" if hit else "edit (outside every placed shot)")
+        end_secs = None
+        out_tc = (rec.get(cols.get("timecode_out", ""), "") or "").strip() if "timecode_out" in cols else ""
+        if out_tc:
+            try:
+                end_frame = parse_time(out_tc, fps) - offset
+                end_secs = float(fpsmod.frame_to_seconds(end_frame, fps))
+                entry.update(timecode_out=out_tc, end_frame=end_frame, end_seconds=round(end_secs, 4))
+            except AemError:
+                pass
+        ms = moments_at(secs, end_secs)
+        m = ms[0] if ms else None
+        near = [w["id"] for w in words if secs - window <= w["start"] <= (end_secs or secs) + window]
+        entry.update(frame=frame, seconds=round(secs, 4), shot=m["id"] if m else None, moment=m["id"] if m else None,
+                     moments=[x["id"] for x in ms], word_ids=near, level="explicit" if m else "video",
+                     about="moment: an explicit ruling candidate" if m else "the video or the edit (on no moment)")
         comments.append(entry)
 
     outdir = ctx.project_dir / "reviews" / ctx.client.id
@@ -267,7 +267,7 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
     review = {
         "client": ctx.client.id, "project": ctx.project, "imported": ts(), "csv": rel_to(dest, ctx.project_dir),
         "csv_sha256": sha256_file(dest), "fps": fpsmod.rate_str(fps), "fps_source": "--fps" if fps_override else ctx.fps_source,
-        "timeline_start": start_tc or "00:00:00:00", "columns": cols, "placements": placements_src, "words": words_src,
+        "timeline_start": start_tc or "00:00:00:00", "columns": cols, "moments": "moments/index.json", "words": words_src,
         "comments": comments,
         "check": "Confirm one comment by opening its frame and checking it shows what the comment describes.",
     }
@@ -277,14 +277,14 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
     # Draft rulings: every delivered shot gets a row; silence is not a ruling.
     by_shot: dict = {}
     for c in comments:
-        if c.get("shot"):
-            by_shot.setdefault(c["shot"], []).append(c)
+        for mid in c.get("moments") or []:  # a comment over a range is a candidate on each moment it is on
+            by_shot.setdefault(mid, []).append(c)
     rulings = [f"# Draft rulings · {ctx.client.name} · {ctx.project} · {date}", "",
                f"From `{rel_to(dest, ctx.project_dir)}` at {fpsmod.rate_str(fps)}. Draft written by `aem import-review`; "
-               "the operator fills in the ruling. Silence is not a ruling: a shot with no comment stays `pending` "
-               "until the client gives an explicit keep, change or remove.", "",
-               "| Shot | Word IDs | Ruling (keep / change / remove) | Client's words | Source |", "|---|---|---|---|---|"]
-    shot_names = [s["shot"] for s in shots] or list(by_shot)
+               "the operator reads each comment as keep, change or remove. A moment with no comment is not a ruling: it "
+               "becomes an implicit acceptance only when the whole video is accepted (`aem accept-video`).", "",
+               "| Moment | Word IDs | Ruling (keep / change / remove) | Client's words | Source |", "|---|---|---|---|---|"]
+    shot_names = [m["id"] for m in index["moments"]] or list(by_shot)
     for shot in shot_names:
         cs = by_shot.get(shot, [])
         if cs:
@@ -296,7 +296,7 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
             rulings.append(f"| {shot} | - | pending (no comment) | - | - |")
     edit_notes = [c for c in comments if c.get("frame") is not None and not c.get("shot")]
     if edit_notes:
-        rulings += ["", "## About the edit, not a shot", ""]
+        rulings += ["", "## About the video or the edit (on no moment)", ""]
         rulings += [f"- row {c['row']} at {c['timecode']}: {c['comment']}" for c in edit_notes]
     unparsed = [c for c in comments if c.get("frame") is None]
     if unparsed:
@@ -319,10 +319,18 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
             "source": f"{rel_to(dest, ctx.project_dir)} rows " + ", ".join(str(c["row"]) for c in cs),
             "rule_ids": [], "critic_verdict_g5": None, "critic_agreed": None,
             "notes": "Draft from aem import-review. The words are the commenter's, verbatim from the CSV. "
-                     "Ruling, render SHA-256 and rule IDs are for the operator to fill in.",
-            "draft": True,
+                     "The operator reads them as keep, change or remove in the review inbox.",
+            "draft": True, "moment": shot, "level": "explicit",
         }
         drafts.append(case)
+    for c in edit_notes:
+        drafts.append({
+            "case_id": f"{ctx.project}-video-{date}-row{c['row']}", "status": "development case", "video": ctx.project,
+            "shot": None, "word_ids": c["word_ids"], "render_sha256": None, "frames_or_crops": [], "ruling": None,
+            words_field: [c["comment"]], "ruling_date": None,
+            "source": f"{rel_to(dest, ctx.project_dir)} row {c['row']}", "rule_ids": [], "critic_verdict_g5": None,
+            "critic_agreed": None, "notes": "Draft from aem import-review: a comment on no moment, about the video or "
+                                            "the edit.", "draft": True, "moment": None, "level": "video"})
     if drafts_path.exists():
         drafts_path.unlink()
     for d in drafts:
@@ -332,8 +340,9 @@ def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = Non
                   csv=rel_to(dest, ctx.project_dir), source="aem import-review")
     return {
         "ok": True, "comments": len(comments), "mapped_to_shots": sum(1 for c in comments if c.get("shot")),
+        "mapped_to_moments": sum(1 for c in comments if c.get("moment")),
         "about_edit": len(edit_notes), "unreadable": len(unparsed),
         "shots_pending": [s for s in shot_names if s not in by_shot],
         "files": {"csv": str(dest), "review": str(review_path), "rulings": str(rulings_path), "drafts": str(drafts_path)},
-        "columns": cols, "fps": fpsmod.rate_str(fps), "placements": placements_src, "words": words_src,
+        "columns": cols, "fps": fpsmod.rate_str(fps), "moments": index["moments_count"], "words": words_src,
     }
