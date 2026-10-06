@@ -36,6 +36,14 @@ class UseStatus(WorldCase):
         code, d = self.w.run("use", "acme/P9", "--registry", str(self.w.registry))
         self.assertEqual(code, 2)
 
+    def test_use_clear_as_the_plugin_sends_it(self):
+        # `/aem use --clear` reaches the CLI as `aem use "" --clear`.
+        self.w.use()
+        self.assertTrue((self.w.home / "active.json").exists())
+        _, d = self.w.run("use", "", "--clear", check=True)
+        self.assertEqual((d["active"], d["was"]["client"]), (False, "acme"))
+        self.assertFalse((self.w.home / "active.json").exists())
+
     def test_use_without_fps_refuses(self):
         (self.w.project / "frame.md").unlink()
         code, d = self.w.run("use", "acme/P1", "--registry", str(self.w.registry))
@@ -249,13 +257,10 @@ class Allow(WorldCase):
         _, l = self.w.run("allow", "--list", check=True)
         self.assertEqual({x["allow_id"] for x in l["allows"]}, {a["allow_id"], b["allow_id"]})
         from aem import clients, registry
-        import argparse, os
-        os.environ["AEM_HOME"] = str(self.w.home)
-        try:
+        import argparse
+        with self.w.environ():
             ctx = registry.context(argparse.Namespace())
             clients.consume_allow(ctx, a["allow_id"], subject="hyperframes snapshot --describe")
-        finally:
-            os.environ.pop("AEM_HOME")
         _, l = self.w.run("allow", "--list", check=True)
         self.assertEqual([x["allow_id"] for x in l["allows"]], [b["allow_id"]])
         self.w.run("allow", "--revoke", b["allow_id"], check=True)

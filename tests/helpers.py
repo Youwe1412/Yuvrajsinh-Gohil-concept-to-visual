@@ -1,10 +1,15 @@
 """Test helpers: a throwaway client, design system and project, and synthetic renders.
 
 Nothing here touches a real client folder: every test builds its world in a temp directory
-and points AEM_HOME and the registry at it.
+and points AEM_HOME and the registry at it. Importing this module also points the whole test
+process at a fresh AEM_HOME and a temp copy of the registry, so a test that forgets its world
+still never reads or writes the operator's ~/.aem or registry/clients.json; and it snapshots
+both, so test_zz_isolation can fail the run if either changed.
 """
 from __future__ import annotations
 
+import atexit
+import contextlib
 import json
 import os
 import shutil
@@ -17,6 +22,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 AEM = REPO / "cli" / "bin" / "aem"
 sys.path.insert(0, str(REPO / "cli"))
+
+import isolation  # noqa: E402  (tests/isolation.py)
+
+REAL_STATE_BEFORE = isolation.snapshot()
+SANDBOX = isolation.sandbox(prefix="aem-tests-")
+os.environ.update(SANDBOX.env)
+os.environ.pop("AEM_FIXED_NOW", None)
+atexit.register(SANDBOX.cleanup)
 
 HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
@@ -115,9 +128,22 @@ class World:
                 "blocked_commands": ["snapshot --describe"], "idle_minutes": 10,
             }],
         }, indent=2), encoding="utf-8")
-        self.env = {**os.environ, "AEM_HOME": str(self.home)}
-        self.env.pop("AEM_REGISTRY", None)
+        self.env = {**os.environ, "AEM_HOME": str(self.home), "AEM_REGISTRY": str(self.registry)}
         self.env.pop("AEM_FIXED_NOW", None)
+
+    @contextlib.contextmanager
+    def environ(self):
+        """This world's AEM_HOME and registry for in-process calls; restores the process sandbox after."""
+        saved = {k: os.environ.get(k) for k in ("AEM_HOME", "AEM_REGISTRY")}
+        os.environ.update(AEM_HOME=str(self.home), AEM_REGISTRY=str(self.registry))
+        try:
+            yield
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
     def run(self, *args, stdin: str | None = None, env: dict | None = None, check: bool = False):
         """Run the CLI with --json; returns (exit code, parsed JSON)."""

@@ -8,9 +8,14 @@
 set -euo pipefail
 MODEL="${1:-gpt-5.5}"
 AEM="${AEM:-$HOME/.local/bin/aem}"
+ISO="$(cd "$(dirname "$0")/.." && pwd)/isolation.py"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/work" "$TMP/aemhome"
+# Every aem this script starts (codex-config here, the hooks inside Codex) uses a sandbox AEM_HOME
+# and registry copy, never ~/.aem or registry/clients.json; both are checked unchanged at the end.
+python3 "$ISO" snapshot "$TMP/real-state.json"
+eval "$(python3 "$ISO" sandbox aem-codex-check-)"
+trap 'rm -rf "$TMP" "$AEM_SANDBOX"' EXIT
+mkdir -p "$TMP/work"
 git -C "$TMP/work" init -q
 
 # One -c per [hooks] line of the generated TOML: `Event = [...]` becomes `hooks.Event=[...]`.
@@ -25,7 +30,7 @@ done < <("$AEM" codex-config --format toml)
 PROMPT='This is an automated test of a hook. Run this one shell command exactly once and do not retry or work around a refusal: aem approve demo-shot --gate G4. Then report word for word any message you got instead.'
 
 set +e
-( cd "$TMP/work" && AEM_HOME="$TMP/aemhome" codex exec -m "$MODEL" -c model_reasoning_effort=low \
+( cd "$TMP/work" && codex exec -m "$MODEL" -c model_reasoning_effort=low \
     "${ARGS[@]}" --ephemeral --skip-git-repo-check --dangerously-bypass-hook-trust -s read-only \
     -C "$TMP/work" "$PROMPT" >"$TMP/out.txt" 2>"$TMP/err.txt" )
 set -e
@@ -38,3 +43,4 @@ if grep -q 'hook: SessionStart Completed' "$TMP/err.txt" && grep -q 'hook: PreTo
 else
   echo "FAIL: see the Codex log below"; tail -40 "$TMP/err.txt"; exit 1
 fi
+python3 "$ISO" check "$TMP/real-state.json"

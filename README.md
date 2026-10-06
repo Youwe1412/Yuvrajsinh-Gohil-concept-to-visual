@@ -54,10 +54,16 @@ stops the common mistakes; it does not stop a determined person. Each guard's ex
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -t tests
+tests/run.sh
 ```
 
-The plugin's own tests run with `claude plugin test plugin/aavkar-educational-motion-studio`.
+runs the CLI unit tests (`python3 -m unittest discover -s tests -t tests`) and the plugin's tests
+(`claude plugin test plugin/aavkar-educational-motion-studio`) against a sandbox: a fresh temp
+`AEM_HOME` and a temp copy of the registry with every client's folders moved inside it
+(`tests/isolation.py`). It fails if `~/.aem` or `registry/clients.json` changed during the run;
+`tests/test_zz_isolation.py` makes the same check at the end of a bare `unittest` run. The
+acceptance script (`tests/acceptance/operator.sh init`, then `<step> <sandbox>`) and
+`tests/live/codex-hooks-check.sh` run only against such a sandbox.
 
 ## Files AEM writes
 

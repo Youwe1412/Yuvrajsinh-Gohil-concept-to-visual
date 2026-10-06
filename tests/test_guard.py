@@ -136,12 +136,9 @@ class ApproveDefaults(WorldCase):
         # A render_check event for the item, as aem check-render writes it.
         self.w.run("stage", "start", "G4", "shot", check=True)
         from aem import ledger, registry
-        import argparse, os
-        os.environ["AEM_HOME"] = str(self.w.home)
-        try:
+        import argparse
+        with self.w.environ():
             ledger.record(registry.context(argparse.Namespace()), "render_check", scene="shot",
                           render="renders/shot_v01.mp4", result="pass")
-        finally:
-            os.environ.pop("AEM_HOME")
         _, d = self.w.run("approve", "shot", check=True)
         self.assertEqual((d["approval"]["gate"], d["approval"]["render"]), ("G4", "renders/shot_v01.mp4"))

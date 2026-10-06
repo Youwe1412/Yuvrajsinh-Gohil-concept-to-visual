@@ -3,18 +3,39 @@
 # (`claude -p`) with this repository's plugin loaded, exactly as Yuvraj would type them. Each step
 # is fixed: this script is not a general way to run operator commands.
 #
-#   tests/acceptance/operator.sh <use|g1|g4-approve|approve|g6|report|clear> <registry.json>
+#   tests/acceptance/operator.sh init                    make a sandbox; prints its folder
+#   tests/acceptance/operator.sh <step> <sandbox>        step: use|g1|g4-approve|approve|g6|report|clear
 #
-# The agent's side (editing a protected file, rendering, placing) is done by the agent in a live
-# session with the plugin loaded, so its guard and sentinel are the ones under test.
+# Every step runs against the sandbox only: AEM_HOME is <sandbox>/aem-home and the registry is
+# <sandbox>/clients.json, a copy of registry/clients.json with every client's folders inside the
+# sandbox. Copy the design system and the test project into <sandbox>/<client folder>/ before `use`.
+# The script refuses a folder that is not such a sandbox, and fails if ~/.aem or
+# registry/clients.json changed while a step ran.
+#
+# The agent's side (editing a protected file, rendering, placing) is done by an agent session
+# with the plugin loaded and the same AEM_HOME, so its guard and sentinel are the ones under test.
 set -euo pipefail
-STEP="$1"
-REG="${2:-}"
+STEP="${1:-}"
+SB="${2:-}"
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+ISO="$HERE/tests/isolation.py"
 PLUGIN="$HERE/plugin/aavkar-educational-motion-studio"
 # The desktop app's newest bundled Claude Code when present (the PATH one can be older), else PATH.
 NEWEST="$(ls -1d "$HOME/Library/Application Support/Claude/claude-code"/*/*/claude.app/Contents/MacOS/claude 2>/dev/null | sort -V | tail -1 || true)"
 CLAUDE="${CLAUDE:-${NEWEST:-claude}}"
+
+if [ "$STEP" = init ]; then
+  eval "$(python3 "$ISO" sandbox aem-acceptance-)"
+  echo "$AEM_SANDBOX"
+  exit 0
+fi
+[ -n "$SB" ] || { echo "usage: $0 init | $0 <step> <sandbox>" >&2; exit 2; }
+SB="$(cd "$SB" && pwd -P)"
+python3 "$ISO" verify "$SB"
+export AEM_HOME="$SB/aem-home" AEM_REGISTRY="$SB/clients.json"
+SNAP="$(mktemp)"
+trap 'rm -f "$SNAP"' EXIT
+python3 "$ISO" snapshot "$SNAP"
 
 type_cmd() {
   echo "operator> $1"
@@ -22,7 +43,7 @@ type_cmd() {
 }
 
 case "$STEP" in
-  use)        type_cmd "/aem use joel/P1 --registry $REG" ;;
+  use)        type_cmd "/aem use joel/P1 --registry $AEM_REGISTRY" ;;
   g1)         type_cmd "/stage G1" ;;
   g4-approve) type_cmd "/stage G4 fd_S01_next-token"; type_cmd "/approve fd_S01_next-token" ;;
   approve)    type_cmd "/approve fd_S01_next-token" ;;
@@ -31,3 +52,5 @@ case "$STEP" in
   clear)      type_cmd "/aem use --clear" ;;
   *) echo "unknown step $STEP" >&2; exit 2 ;;
 esac
+
+python3 "$ISO" check "$SNAP"
