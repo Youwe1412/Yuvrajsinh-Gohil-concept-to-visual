@@ -1,15 +1,15 @@
 // Feature "context": the active project in the system prompt and the status line,
 // drift toasts at session start, and /aem use | status | new-client.
-import { atom, read, update } from 'claude-code'
-import type { EngineInterface, On, PluginOptions } from 'claude-code'
+import type { CommandRunInput, CommandRunResult, PluginOptions, PromptComposeSection } from 'claude-code'
 
-import type { AemView } from '../types'
-import { EMPTY_VIEW, PLUGIN, errorOf, isOperator, runAem, splitArgs, statusLine, viewFrom } from './aem'
-import type { AemResult, RunInit } from './aem'
+import { cli, errorOf, isOperator, refresh, refusedText, splitArgs, statusLine } from './aem'
+import type { CommandSpecLite, Io } from './aem'
 
-const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as const, EMPTY_VIEW)
+export const SECTION_ID = 'aavkar-educational-motion-studio:context'
 
-const SECTION_ID = `${PLUGIN}:context`
+export const CONTEXT_COMMANDS: readonly CommandSpecLite[] = [
+  { name: 'aem', description: 'Aavkar Educational Motion Studio: use, status, new-client', argumentHint: 'use <client>/<project> | status | new-client <id>' },
+]
 
 const HELP = [
   'Usage:',
@@ -20,95 +20,66 @@ const HELP = [
 
 type Finding = { check?: string; file?: string; problem?: string }
 
-async function cli($: EngineInterface, options: PluginOptions, args: readonly string[], init?: RunInit): Promise<AemResult> {
-  return runAem((argv, i) => $.process.run(argv, i), await $.env.get('HOME'), options, args, init)
-}
-
-// Reads status and context from the CLI into state, then redraws the status line.
-async function refresh($: EngineInterface, options: PluginOptions): Promise<AemView> {
-  const [status, ctx] = await Promise.all([cli($, options, ['status']), cli($, options, ['context'])])
-  const next = viewFrom(status, ctx)
-  await update($, view, () => next)
-  $.ui.status(statusLine(next, await $.clock.now()))
-  return next
-}
-
-async function toastDrift($: EngineInterface, options: PluginOptions): Promise<void> {
-  const drift = await cli($, options, ['drift'])
+async function toastDrift(io: Io, options: PluginOptions): Promise<void> {
+  const drift = await cli(io, options, ['drift'])
   if (drift.code === 0 || drift.code === 127) return
   const findings = Array.isArray(drift.data.findings) ? (drift.data.findings as Finding[]) : []
   if (findings.length === 0) {
-    $.ui.toast(`AEM drift check failed: ${errorOf(drift)}`, { timeoutMs: 8000 })
+    io.toast(`AEM drift check failed: ${errorOf(drift)}`, 8000)
     return
   }
   for (const f of findings.slice(0, 3)) {
-    $.ui.toast(`AEM drift [${f.check}] ${f.file ?? ''} ${f.problem ?? ''}`.replace(/\s+/g, ' ').trim(), { timeoutMs: 10_000 })
+    io.toast(`AEM drift [${f.check}] ${f.file ?? ''} ${f.problem ?? ''}`.replace(/\s+/g, ' ').trim(), 10_000)
   }
-  if (findings.length > 3) $.ui.toast(`AEM drift: ${findings.length - 3} more; run aem drift`, { timeoutMs: 10_000 })
+  if (findings.length > 3) io.toast(`AEM drift: ${findings.length - 3} more; run aem drift`, 10_000)
 }
 
+export async function contextStart(io: Io, options: PluginOptions): Promise<void> {
+  const { view } = await refresh(io, options)
+  if (view.error) io.toast(`AEM: ${view.error}`, 10_000)
+  else if (!view.active) io.toast('AEM: no active project. Run /aem use <client>/<project>', 8000)
+  else await toastDrift(io, options)
+}
 
-export function context(on: On, options: PluginOptions): void {
-  on('session.start', async ($, e, next) => {
-    const started = await next(e)
-    await $.command.register({
-      name: 'aem',
-      description: 'Aavkar Educational Motion Studio: use, status, new-client',
-      argumentHint: 'use <client>/<project> | status | new-client <id>',
-    })
-    const v = await refresh($, options)
-    if (v.error) $.ui.toast(`AEM: ${v.error}`, { timeoutMs: 10_000 })
-    else if (!v.active) $.ui.toast('AEM: no active project. Run /aem use <client>/<project>', { timeoutMs: 8000 })
-    else await toastDrift($, options)
-    // Stage time ticks locally every 30 s; the CLI is asked again every 3 minutes for outside changes.
-    let ticks = 0
-    $.clock.every(30_000, () => {
-      ticks += 1
-      if (ticks % 6 === 0) {
-        void refresh($, options)
-        return
-      }
-      void (async () => $.ui.status(statusLine(await read($, view), await $.clock.now())))()
-    })
-    return started
-  })
+// Every 30 s: stage time ticks locally; every sixth tick the CLI is read again for outside changes.
+export async function contextTick(io: Io, options: PluginOptions, tick: number): Promise<void> {
+  if (tick % 6 === 0) {
+    await refresh(io, options)
+    return
+  }
+  io.status(statusLine(await io.getView(), await io.now()))
+}
 
-  on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
-    const text = (await read($, view)).contextText
-    if (!text) return composed
-    return {
-      sections: [...composed.sections.filter(s => s.id !== SECTION_ID), { id: SECTION_ID, text, scope: 'session' as const }],
-    }
-  })
+export async function contextCompose(io: Io, sections: readonly PromptComposeSection[]): Promise<PromptComposeSection[]> {
+  const text = (await io.getView()).contextText
+  const rest = sections.filter(s => s.id !== SECTION_ID)
+  return text ? [...rest, { id: SECTION_ID, text, scope: 'session' }] : rest
+}
 
-  on('command.run', { command: 'aem' }, async ($, e) => {
-    const args = splitArgs(e.args)
-    const sub = args[0]
-    if (sub === 'use' || sub === 'new-client') {
-      if (!isOperator(e.origin)) {
-        return { text: `AEM: /aem ${sub} can only be typed by the operator (this run came from ${e.origin.kind}).` }
-      }
-      let rest = args.slice(1)
-      if (sub === 'use') {
-        // A project name with spaces may be typed unquoted: join the words before the first flag.
-        const flagAt = rest.findIndex(a => a.startsWith('--'))
-        const words = flagAt === -1 ? rest : rest.slice(0, flagAt)
-        rest = [words.join(' '), ...(flagAt === -1 ? [] : rest.slice(flagAt))]
-      }
-      const r = await cli($, options, [sub, ...rest], { json: false })
-      const v = await refresh($, options)
-      if (r.code === 0 && sub === 'use') {
-        $.ui.toast(statusLine(v, await $.clock.now()))
-        await toastDrift($, options)
-      }
-      return { text: r.text || `aem ${sub} exited ${r.code}` }
+export async function contextCommand(io: Io, options: PluginOptions, e: CommandRunInput): Promise<CommandRunResult> {
+  const args = splitArgs(e.args)
+  const sub = args[0]
+  if (sub === 'use' || sub === 'new-client') {
+    if (!isOperator(e.origin)) return { text: refusedText(`aem ${sub}`, e.origin) }
+    let rest = args.slice(1)
+    if (sub === 'use') {
+      // A project name with spaces may be typed unquoted: join the words before the first flag.
+      const flagAt = rest.findIndex(a => a.startsWith('--'))
+      const words = flagAt === -1 ? rest : rest.slice(0, flagAt)
+      rest = [words.join(' '), ...(flagAt === -1 ? [] : rest.slice(flagAt))]
     }
-    if (sub === 'status' || sub === undefined) {
-      const r = await cli($, options, ['status'], { json: false })
-      await refresh($, options)
-      return { text: r.text }
+    const r = await cli(io, options, [sub, ...rest], { json: false })
+    const { view } = await refresh(io, options)
+    if (r.code === 0 && sub === 'use') {
+      io.toast(statusLine(view, await io.now()))
+      await toastDrift(io, options)
     }
-    return { text: HELP }
-  })
+    return { text: r.text || `aem ${sub} exited ${r.code}` }
+  }
+  if (sub === 'status' || sub === undefined) {
+    const r = await cli(io, options, ['status'], { json: false })
+    await refresh(io, options)
+    return { text: r.text }
+  }
+  return { text: HELP }
 }

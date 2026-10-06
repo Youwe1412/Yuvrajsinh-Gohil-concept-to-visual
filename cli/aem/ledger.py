@@ -76,7 +76,7 @@ def current_stage(events: list[dict]) -> tuple | None:
     return next(reversed(opened))
 
 
-def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, extra=None) -> dict:
+def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, extra=None, switch=False) -> dict:
     events = read_events(ctx)
     opened = open_stages(events)
     extra = extra or {}
@@ -89,7 +89,18 @@ def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, ext
         scene = args[1] if len(args) > 1 else None
         if (gate, scene) in opened:
             raise AemError(f"{gate}{' · ' + scene if scene else ''} is already open since {opened[(gate, scene)]['since']}")
-        return record(ctx, "start", gate=gate, scene=scene, note=note, at=at, source="aem stage", **extra)
+        closed = None
+        if switch:
+            # Moving on: the stage open for the same scene (or the whole video) finishes first.
+            same = [k for k in opened if k[1] == scene]
+            if same:
+                k = same[-1]
+                closed = record(ctx, "finish", gate=k[0], scene=k[1], note=f"switched to {gate}", at=at,
+                                source="aem stage", **extra)
+        rec = record(ctx, "start", gate=gate, scene=scene, note=note, at=at, source="aem stage", **extra)
+        if closed:
+            rec = {**rec, "_closed": closed}
+        return rec
     if action == "end":
         if args:
             k = (args[0].upper(), args[1] if len(args) > 1 else None)
@@ -243,7 +254,14 @@ def build_timeline(events: list[dict], report_time: float, client_ids: set) -> d
                 busy.append((o_turn, t))
                 o_turn = None
         elif e == "idle_start":
-            o_idle = o_idle if o_idle is not None else t
+            if o_idle is None:
+                # The ledger mod notices idleness idle_minutes after the last activity and records
+                # that activity's time as inactive_since: idle is measured from there.
+                since = ev.get("inactive_since")
+                try:
+                    o_idle = min(t, parse_ts(since).timestamp()) if since else t
+                except ValueError:
+                    o_idle = t
         elif e in ("idle_end", "prompt"):
             if o_idle is not None:
                 idle.append((o_idle, t))
@@ -376,8 +394,8 @@ def render_markdown(ctx: Context, r: dict) -> str:
         "- **Wall**: from a stage's `start` to its `finish`. Where one gate or scene has overlapping "
         "stages, the overlap is counted once.",
         "- **Agent busy**: inside the stage, between `turn_start` and `turn_end` events.",
-        "- **Idle**: inside the stage, between `idle_start` (no input or agent activity for the client's "
-        f"idle_minutes, {ctx.client.idle_minutes:g} min) and the next activity.",
+        "- **Idle**: inside the stage, from the last activity before an `idle_start` (recorded once there was no "
+        f"input or agent activity for the client's idle_minutes, {ctx.client.idle_minutes:g} min) to the next activity.",
         "- **Waiting on client**: from a `waiting_on_<client>` event to the next start, finish or resume "
         "of that gate. **Waiting on others** is any other `waiting_on_…` or `blocked`.",
         "- **Paused**: from `pause` to `resume` (or the stage's finish).",

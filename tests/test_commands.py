@@ -386,3 +386,44 @@ class ContextText(WorldCase):
         _, d = self.w.run("status", check=True)
         p = d["statusline_parts"]
         self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"]), ("Acme Learning", "P1 - Test", "G4", "shot", 0))
+
+
+class LedgerPhase3(WorldCase):
+    def setUp(self):
+        super().setUp()
+        self.w.use()
+
+    def at(self, *args, t):
+        return self.w.run("stage", *args, "--at", f"2026-10-06T{t}:00+05:30", check=True)
+
+    def test_switch_finishes_same_scene_stage(self):
+        self.w.run("stage", "start", "G1", check=True)
+        self.w.run("stage", "start", "G4", "shot-a", check=True)
+        _, d = self.w.run("stage", "start", "G2", "--switch", check=True)
+        self.assertEqual((d["closed"]["event"], d["closed"]["gate"], d["closed"]["scene"]), ("finish", "G1", None))
+        _, st = self.w.run("status", check=True)
+        self.assertEqual(st["stage"]["gate"], "G2")
+        # The scene stage was not touched.
+        self.assertEqual([e["event"] for e in self.w.events() if e["scene"] == "shot-a"], ["start"])
+        _, d = self.w.run("stage", "start", "G5", "shot-a", "--switch", check=True)
+        self.assertEqual((d["closed"]["gate"], d["closed"]["scene"]), ("G4", "shot-a"))
+        _, d = self.w.run("stage", "start", "G6", "shot-b", "--switch", check=True)
+        self.assertNotIn("closed", d)
+
+    def test_idle_measured_from_last_activity(self):
+        self.at("auto", "session_start", "--session", "s1", t="10:00")
+        self.at("start", "G1", t="10:00")
+        self.at("auto", "prompt", "--origin", "composer", t="10:02")
+        self.at("auto", "turn_start", "--turn", "t1", t="10:02")
+        self.at("auto", "turn_end", "--turn", "t1", t="10:05")
+        # Noticed at 10:15 (idle_minutes after the last activity at 10:05), measured from 10:05.
+        self.at("auto", "idle_start", "--since", "2026-10-06T10:05:00+05:30", t="10:15")
+        self.at("auto", "idle_end", t="10:40")
+        self.at("end", t="11:00")
+        self.at("auto", "session_end", t="11:00")
+        _, r = self.w.run("report", env={"AEM_FIXED_NOW": "2026-10-06T11:00:00+05:30"}, check=True)
+        g1 = r["per_gate"]["G1"]
+        self.assertEqual((g1["wall_s"], g1["agent_busy_s"], g1["idle_s"]), (3600, 180, 2100))
+        self.assertEqual(g1["attended_between_turns_s"], 3600 - 180 - 2100)
+        ev = [e for e in self.w.events() if e["event"] == "prompt"][0]
+        self.assertEqual(ev["origin"], "composer")

@@ -46,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", help="(auto) Claude Code session id")
     p.add_argument("--tool", help="(auto tool_call) tool name")
     p.add_argument("--duration-s", type=float, help="(auto tool_call) duration in seconds")
+    p.add_argument("--since", help="(auto idle_start) ISO time of the last activity")
+    p.add_argument("--origin", help="(auto prompt) where the prompt came from")
+    p.add_argument("--turn", help="(auto) Claude Code turn id")
+    p.add_argument("--switch", action="store_true", help="(start) finish the stage open for the same scene first")
     _common(p)
 
     p = sub.add_parser("report", help="write reports/time.md from events.jsonl")
@@ -183,11 +187,17 @@ def cmd_context(a):
 
 def cmd_stage(a):
     ctx = registry.context(a)
-    extra = {k: v for k, v in {"session": a.session, "tool": a.tool, "duration_s": a.duration_s}.items() if v is not None}
-    rec = ledger.stage(ctx, a.action, a.args, note=a.note, at=a.at, extra=extra)
+    extra = {k: v for k, v in {"session": a.session, "tool": a.tool, "duration_s": a.duration_s,
+                               "inactive_since": a.since, "origin": a.origin, "turn": a.turn}.items() if v is not None}
+    rec = ledger.stage(ctx, a.action, a.args, note=a.note, at=a.at, extra=extra, switch=a.switch)
+    closed = rec.pop("_closed", None)
     st = ledger.stage_time(ctx)
     data = {"ok": True, "event": strip_private(rec), "stage": st, "statusline": _status(ctx)["statusline"]}
-    return data, f"{rec['event']} {rec.get('gate') or ''} {rec.get('scene') or ''} at {rec['ts']}".replace("  ", " ")
+    text = f"{rec['event']} {rec.get('gate') or ''} {rec.get('scene') or ''} at {rec['ts']}"
+    if closed:
+        data["closed"] = strip_private(closed)
+        text = f"finish {closed['gate']} {closed.get('scene') or ''}\n" + text
+    return data, " ".join(text.split(" ")).replace("  ", " ")
 
 
 def cmd_report(a):

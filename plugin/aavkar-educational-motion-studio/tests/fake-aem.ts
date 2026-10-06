@@ -16,7 +16,7 @@ export type World = {
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
-export function floor(on: On, route: Router, opts: { cannotStart?: boolean } = {}): World {
+export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number> } = {}): World {
   const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }) }
   mock.env(on, { HOME: '/Users/test' })
   mock.store(on)
@@ -39,6 +39,16 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean } = {
   })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'sess-1' }))
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('tool.call', async ($, e) => {
+    const ms = opts.toolMs?.[String(e.tool)] ?? 0
+    if (ms > 0) await w.clock.advance(ms)
+    return { result: 'done' }
+  })
   return w
 }
 
@@ -67,3 +77,10 @@ export function active(over: Partial<Record<string, Reply>> = {}): Router {
 export const COMPOSER = { kind: 'composer' } as const
 export const PRESENTATION = { isFullscreen: false, columns: 120 }
 export const START = { cwd: '/tmp/project', surface: 'terminal', isInteractive: true } as const
+
+// The `stage auto` calls made, as [event, ...extra] with the session flag dropped.
+export function autos(w: World): string[][] {
+  return w.calls
+    .filter(c => c[1] === 'stage' && c[2] === 'auto')
+    .map(c => c.slice(3).filter((a, i, all) => a !== '--json' && a !== '--session' && all[i - 1] !== '--session'))
+}

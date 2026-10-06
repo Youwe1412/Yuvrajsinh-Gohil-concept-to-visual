@@ -15,11 +15,11 @@ later commands use the same one.
 |---|---|
 | `use <client>/<project> [--path DIR] [--fps N/D]` | Makes a project active: writes `~/.aem/active.json` (`AEM_HOME` overrides `~/.aem`). The project is found by registry entry, exact folder name, or a unique `NAME - ` prefix (`joel/P2` finds `P2 - Claude Code`); `--path` takes a folder anywhere (a test copy). |
 | `status` | Client, project, fps, the open stage and its time, approvals (standing and stale), active overrides, the last render check, and the status-line text. |
-| `stage start <gate> [scene]` | Opens a stage. Gates come from the client's registry entry. |
+| `stage start <gate> [scene] [--switch]` | Opens a stage. Gates come from the client's registry entry. `--switch` first finishes the stage open for the same scene (or the whole video); `/stage` always uses it. |
 | `stage end [gate [scene]]` | Closes the named stage, or the most recently opened one. |
 | `stage pause`, `stage resume` | Pause and resume the current stage. `resume` also ends a wait. |
 | `stage wait <who>` | Work waits on someone: `waiting_on_<who>`. Waiting ends at the next start, finish or resume of that gate. `wait blocked` writes the skill's `blocked`. |
-| `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end`, `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start`, `idle_end`. `--session` records the Claude Code session id. |
+| `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end`, `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
 | `report [--no-write]` | Writes `<project>/reports/time.md`. |
 | `approve <item> <path> --gate G` | Appends an approval for that exact file's SHA-256. Operator only (the plugin refuses it from the agent). |
 | `reject <item> --reason TEXT` | Appends a rejection; the item's earlier approval stops standing. Operator only. |
@@ -102,7 +102,7 @@ the old bytes come back: re-approve.
 
 `reports/time.md` gives, per gate, per scene and per gate-and-scene: **wall** (start to finish),
 **agent busy** (turn start to turn end), **idle** (no input or agent activity for the client's
-`idle_minutes`), **waiting on client** (`waiting_on_<id>` where the id is the client's or listed in
+`idle_minutes`, measured from the last activity), **waiting on client** (`waiting_on_<id>` where the id is the client's or listed in
 `waiting_on_client_ids`), **waiting on others**, **paused**, **attended between turns** (observed
 session time that is none of these) and **unobserved** (stage time when no ledger was recording).
 Every number is a difference of recorded timestamps. Overlapping stages of one gate are counted

@@ -1,7 +1,7 @@
 // Calls the aem CLI. Every decision AEM makes is the CLI's; this file only runs it.
 import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } from 'claude-code'
 
-import type { AemStatusParts, AemView } from '../types'
+import type { AemLedger, AemStatusParts, AemView } from '../types'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
 
@@ -136,4 +136,45 @@ export function statusLine(v: AemView, nowMs: number): string {
   }
   if (p.stale > 0) bits.push(`${p.stale} stale`)
   return bits.join(' · ')
+}
+
+
+// --- io: what features may do, as closures over the hook's `$` built in register.ts ---
+// The engine follows `$` only within the file that holds it, so features never see `$`.
+
+export type CommandSpecLite = { name: string; description: string; argumentHint?: string }
+
+export type Io = {
+  run: ProcessRun
+  home: () => Promise<string | undefined>
+  toast: (text: string, timeoutMs?: number) => void
+  status: (text: string | undefined) => void
+  now: () => Promise<number>
+  sessionId: () => Promise<string>
+  registerCommand: (spec: CommandSpecLite) => Promise<void>
+  getView: () => Promise<AemView>
+  setView: (v: AemView) => Promise<void>
+  getLedger: () => Promise<AemLedger>
+  patchLedger: (fn: (l: AemLedger) => AemLedger) => Promise<void>
+}
+
+export async function cli(io: Io, options: PluginOptions, args: readonly string[], init?: RunInit): Promise<AemResult> {
+  return runAem(io.run, await io.home(), options, args, init)
+}
+
+// Reads status and context from the CLI into state, then redraws the status line.
+export async function refresh(io: Io, options: PluginOptions): Promise<{ view: AemView; status: AemResult }> {
+  const [status, ctx] = await Promise.all([cli(io, options, ['status']), cli(io, options, ['context'])])
+  const v = viewFrom(status, ctx)
+  await io.setView(v)
+  const idle = status.data.idle_minutes
+  if (typeof idle === 'number') await io.patchLedger(l => ({ ...l, idleMinutes: idle }))
+  io.status(statusLine(v, await io.now()))
+  return { view: v, status }
+}
+
+export const EMPTY_LEDGER: AemLedger = { recordedFor: null, lastActivity: 0, idleSince: null, turnId: null, idleMinutes: 10 }
+
+export function refusedText(command: string, origin: PromptOrigin): string {
+  return `AEM: /${command} can only be typed by the operator (this run came from ${origin.kind}).`
 }
