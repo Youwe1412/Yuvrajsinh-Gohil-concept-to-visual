@@ -22,6 +22,7 @@ import {
   ledgerTurnComplete,
   ledgerTurnStart,
 } from './ledger'
+import { sentinelAfter, sentinelBefore } from './sentinel'
 
 const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as const, EMPTY_VIEW)
 const ledger = atom({ plugin: 'aavkar-educational-motion-studio', key: 'ledger' } as const, EMPTY_LEDGER)
@@ -101,9 +102,13 @@ export const register: Register = (on, options) => {
     const verdict = await guardCall(x, options, String(e.tool), e as unknown as Record<string, unknown>)
     if ('deny' in verdict) return { deny: verdict.deny }
     const startedAt = await $.clock.now()
+    const watching = await sentinelBefore(x, String(e.tool))
     const ran = await next(e)
     await ledgerToolDone(x, options, String(e.tool), startedAt, await $.clock.now())
-    return ran
+    if ('deny' in ran && ran.deny !== undefined) return ran
+    const note = await sentinelAfter(x, options, e as unknown as Record<string, unknown>, watching, ran.isError === true)
+    if (note === undefined || ran.isError === true) return ran
+    return { ...ran, context: [...(ran.context ?? []), note] }
   })
 
   for (const c of CONTEXT_COMMANDS) {

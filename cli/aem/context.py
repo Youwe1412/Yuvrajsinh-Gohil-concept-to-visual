@@ -76,6 +76,9 @@ def build(ctx: Context) -> dict:
         "- Never run `aem " + "`, `aem ".join(AGENT_DENIED) + "` yourself. You may run `aem status`, "
         "`aem check-render`, `aem check-approval`, `aem drift`, `aem report` and `aem import-review`.",
         "- Before placing or delivering a render, `aem check-approval <path>` must pass.",
+        "- After a render command finishes, AEM checks each new render (`aem check-render`) and tells you the "
+        "result. A render that fails is not ready to show the operator. Renders run in the background are not "
+        "checked automatically: run `aem check-render <path>` on each when they finish.",
         "- A tool call AEM denies says why and how the operator can approve or override it. Do not try "
         "another route to the same effect; tell the operator what was denied.",
         "- These are recorded checks, not security boundaries.",

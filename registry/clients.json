@@ -104,7 +104,16 @@
           "path": null
         }
       ],
-      "idle_minutes": 10
+      "idle_minutes": 10,
+      "render_sentinel": {
+        "command_patterns": [
+          "(?:^|[\\s;&|/])bin/(?:r|ra|renderall)\\.sh\\b"
+        ],
+        "output_dirs": [
+          "renders"
+        ],
+        "note": "P1 renders through bin/r.sh (full frame), bin/ra.sh (alpha .mov) and bin/renderall.sh; all write to renders/."
+      }
     }
   ]
 }

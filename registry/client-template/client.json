@@ -66,6 +66,12 @@
     "service": "Frame.io",
     "import": "csv"
   },
+  "render_sentinel": {
+    "command_patterns": [],
+    "output_dirs": [
+      "renders"
+    ]
+  },
   "audio_libraries": [],
   "idle_minutes": 10
 }

@@ -28,6 +28,7 @@ later commands use the same one.
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
 | `import-review <csv> [--fps N/D] [--start-tc TC] [--placements FILE]` | Maps a Frame.io comment export to frames, shots and word IDs. Writes review files and draft labelled cases; never edits the decisions file or the critic's file. |
+| `rendered` | Checks the renders a finished shell command wrote, read as JSON on stdin (`{command, cwd, started_at, exit_code, probe_only}`). Runs `check-render` on each and returns a toast line and a note for the agent. The plugin runs it after every `Bash` call; see Render sentinel below. |
 | `guard` | Decides one tool call, read as JSON on stdin (`{tool, input, cwd}`). Exit 0 allow, 1 deny. The plugin runs it before every file or shell tool call; see Guards below. |
 | `drift [--client ID] [--skills-dir DIR]` | Text exports vs their HTML pages, installed skill vs master, and rule IDs in the skill vs the rules file. |
 | `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. |
@@ -58,7 +59,8 @@ Optional, in the project folder.
   "render": {"width": 3840, "height": 2160, "alpha_extensions": [".mov"]},
   "scenes": {"fd_S01_next-token": {"composition": "compositions/next-token.html"}},
   "flash": {"min_area_pct": 0.1},
-  "placements": "data/edit.json"
+  "placements": "data/edit.json",
+  "render_sentinel": {"command_patterns": ["\\bbin/render\\.sh\\b"], "output_dirs": ["renders"]}
 }
 ```
 
@@ -136,6 +138,40 @@ once. Open stages are listed and counted to the report time.
 - Skill comparison ignores macOS `._` files and `.DS_Store`.
 - Rule IDs are found with the client's `rule_id_pattern`; a range written as `B-T1-01…05` is read
   as `B-T1-01` only.
+
+## Render sentinel (`aem rendered`)
+
+After every `Bash` call the agent makes while a project is active, the plugin sends the command to
+`aem rendered`, which decides whether it was a render and checks what it wrote.
+
+- **Is it a render?** It matches a render pattern: `hyperframes render`, `npx hyperframes render` and
+  `remotion render` always, plus the client's `render_sentinel.command_patterns` in the registry
+  (Joel: `bin/r.sh`, `bin/ra.sh`, `bin/renderall.sh`) and the project's in `aem.project.json`.
+- **What did it write?** Media files (the client's `approval_gates.media_extensions`) found three ways:
+  the value after `-o`, `--output` or `--out`; other media paths on the command line; and any media
+  file under the output folders (`render_sentinel.output_dirs`, default `renders/`, searched
+  recursively) whose modification time is at or after the command's start, less 2 seconds. An output
+  value with `$` or `{` in it (a shell variable, a batch `{slug}`) adds its folder to the search.
+  At most `max_outputs` (default 100) files are checked, the newest ones.
+- **What happens** Each file goes through `check-render` (recorded as a `render_check` event, and
+  earlier approvals of a changed render marked stale). The operator gets a toast: `PASS`/`FAIL` with
+  the first reason for one file, counts for several, and the number of stale approvals. The agent
+  reads the full result after the command's own output. The status line is redrawn, so its stale
+  count is current.
+
+Limits:
+
+- A render run with `run_in_background` finishes after the call returns, so it is not checked; the
+  toast and the agent's note say so, and the agent is told to run `aem check-render` itself.
+- A render command the patterns do not match (an unlisted script, an alias, a render started
+  inside another program) is not seen.
+- Outputs are found by modification time, so a render written outside the output folders and
+  not named on the command line is missed, and any other media file that changes under `renders/`
+  while the command runs is checked too.
+- The check blocks the agent until it finishes (up to 10 minutes): about a second per 4K scene on
+  this machine; a full `renderall.sh` of 59 scenes adds about a minute.
+- Every `Bash` call starts one `aem rendered` process (about 0.07 s) even when it is not a render,
+  because the decision lives in the CLI, not the plugin.
 
 ## Guards (`aem guard`)
 

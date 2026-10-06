@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, context, drift, guard, ledger, registry, render, review
+from . import VERSION, approvals, clients, context, drift, guard, ledger, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -105,6 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
 
     p = sub.add_parser("guard", help="decide one tool call (the plugin runs this; JSON on stdin)")
+    _common(p)
+
+    p = sub.add_parser("rendered", help="check the renders a finished shell command wrote (the plugin runs this; JSON on stdin)")
     _common(p)
 
     p = sub.add_parser("drift", help="text exports vs pages, installed skill vs master, skill rule IDs vs rules")
@@ -298,6 +301,20 @@ def cmd_guard(a):
     return {"ok": True, **r}, "ALLOW" + (f" (override {r['allow_id']})" if r.get("allow_id") else "")
 
 
+def cmd_rendered(a):
+    raw = sys.stdin.read()
+    try:
+        req = json.loads(raw or "{}")
+    except json.JSONDecodeError as exc:
+        raise AemError(f"rendered reads one JSON object on stdin ({exc.msg})")
+    ctx = registry.context(a)
+    started = req.get("started_at")
+    r = sentinel.rendered(ctx, str(req.get("command") or ""), req.get("cwd"),
+                          float(started) if started is not None else None, req.get("exit_code"),
+                          probe_only=bool(req.get("probe_only")))
+    return {"ok": True, **r}, r["text"] or ("A render command." if r["render"] else "Not a render command.")
+
+
 def cmd_drift(a):
     if getattr(a, "client", None):
         reg = registry.load_registry(registry.registry_path(getattr(a, "registry", None)))
@@ -325,7 +342,7 @@ def cmd_new_client(a):
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
     "reject": cmd_reject, "client-said": cmd_client_said, "allow": cmd_allow, "check-approval": cmd_check_approval,
-    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "new-client": cmd_new_client,
+    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "rendered": cmd_rendered, "new-client": cmd_new_client,
 }
 
 
