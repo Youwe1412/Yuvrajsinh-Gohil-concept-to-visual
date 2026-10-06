@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, drift, ledger, registry, render, review
+from . import VERSION, approvals, clients, context, drift, ledger, registry, render, review
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -33,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--registry", default=None)
 
     p = sub.add_parser("status", help="active client, project, gate, stage time, approvals")
+    _common(p)
+
+    p = sub.add_parser("context", help="the text the Claude Code plugin adds to the system prompt")
     _common(p)
 
     p = sub.add_parser("stage", help="start|end|pause|resume|wait <who>|auto <event>")
@@ -134,8 +137,11 @@ def _status(ctx) -> dict:
     line = " · ".join(parts)
     if ap["stale"]:
         line += f" · {ap['stale']} stale"
+    parts = {"client": ctx.client.name, "project": ctx.project, "gate": st["gate"] if st else None,
+             "scene": st["scene"] if st else None, "since": st["since"] if st else None,
+             "paused": bool(st and st["paused"]), "waiting": st["waiting"] if st else None, "stale": ap["stale"]}
     return {**ctx.summary(), "stage": st, "approvals": ap, "allows": clients.active_allows(ctx),
-            "last_render_check": last_check, "statusline": line,
+            "last_render_check": last_check, "statusline": line, "statusline_parts": parts,
             "idle_minutes": ctx.client.idle_minutes, "gates": ctx.client.gates}
 
 
@@ -162,6 +168,17 @@ def cmd_status(a):
     if data["allows"]:
         lines.append("  allows  " + ", ".join(f"{x['allow_id']} {x['target']}{' (once)' if x['once'] else ''}" for x in data["allows"]))
     return data, "\n".join(lines)
+
+
+def cmd_context(a):
+    try:
+        ctx = registry.context(a)
+    except AemError as exc:
+        if exc.message.startswith("no active project"):
+            return {"active": False, "text": context.INACTIVE_TEXT}, context.INACTIVE_TEXT
+        raise
+    data = context.build(ctx)
+    return data, data["text"]
 
 
 def cmd_stage(a):
@@ -277,7 +294,7 @@ def cmd_new_client(a):
 
 
 COMMANDS = {
-    "use": cmd_use, "status": cmd_status, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
+    "use": cmd_use, "status": cmd_status, "context": cmd_context, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
     "reject": cmd_reject, "client-said": cmd_client_said, "allow": cmd_allow, "check-approval": cmd_check_approval,
     "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "new-client": cmd_new_client,
 }

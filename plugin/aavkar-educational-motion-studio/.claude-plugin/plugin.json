@@ -1,0 +1,17 @@
+{
+  "name": "aavkar-educational-motion-studio",
+  "version": "0.2.0",
+  "description": "Aavkar Educational Motion Studio (AEM): session context, time ledger, guards, render sentinel and review inbox for educational animation work. Every decision is made by the aem CLI.",
+  "author": {
+    "name": "Aavkar Productions"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "aemPath": {
+      "type": "string",
+      "title": "aem command",
+      "description": "Path or name of the aem command. Left as 'aem', the plugin also tries ~/.local/bin/aem.",
+      "default": "aem"
+    }
+  }
+}

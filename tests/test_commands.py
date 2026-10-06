@@ -356,3 +356,33 @@ class JsonEverywhere(WorldCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContextText(WorldCase):
+    def test_inactive(self):
+        code, d = self.w.run("context")
+        self.assertEqual(code, 0)
+        self.assertFalse(d["active"])
+        self.assertIn("/aem use", d["text"])
+
+    def test_active_section(self):
+        self.w.use()
+        self.w.run("stage", "start", "G2", check=True)
+        _, d = self.w.run("context", check=True)
+        t = d["text"]
+        self.assertIn("Client: Acme Learning (id `acme`, contact Ada)", t)
+        self.assertIn("Gate: G2 (Plan)", t)
+        self.assertIn("Frame rate: 24000/1001 (from frame.md)", t)
+        self.assertIn(str(self.w.ds / "acme-decisions.md"), t)
+        self.assertIn("Skill: use `acme-studio`", t)
+        self.assertIn(str(self.w.project / "approvals.jsonl"), t)
+        self.assertEqual([p["id"] for p in d["preferences"]], ["A-01", "A-02"])
+        self.assertIn("Never write, edit or append to events.jsonl, approvals.jsonl", t)
+        self.assertIn("`aem approve`", t)
+
+    def test_status_parts(self):
+        self.w.use()
+        self.w.run("stage", "start", "G4", "shot", check=True)
+        _, d = self.w.run("status", check=True)
+        p = d["statusline_parts"]
+        self.assertEqual((p["client"], p["project"], p["gate"], p["scene"], p["stale"]), ("Acme Learning", "P1 - Test", "G4", "shot", 0))
