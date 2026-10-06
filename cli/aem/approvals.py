@@ -97,7 +97,25 @@ def last_render_check(ctx: Context, sha: str) -> str:
     return "none"
 
 
-def approve(ctx: Context, item: str, path: str, gate: str, *, note=None, revision=None) -> dict:
+def last_checked_render(ctx: Context, item: str) -> str | None:
+    for ev in reversed(ledger.read_events(ctx)):
+        if ev.get("event") == "render_check" and ev.get("scene") == item and ev.get("render"):
+            return ev["render"]
+    return None
+
+
+def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note=None, revision=None) -> dict:
+    if not path:
+        path = last_checked_render(ctx, item)
+        if not path:
+            raise AemError(f"no render given and none checked for {item}",
+                           hint=f"Run aem check-render on it first, or pass the path: aem approve {item} <path> --gate G4")
+        path = str(ctx.project_dir / path) if not Path(path).is_absolute() else path
+    if not gate:
+        cur = ledger.current_stage(ledger.read_events(ctx))
+        if not cur:
+            raise AemError("no gate given and no stage open", hint="Pass --gate G4 (or start a stage with /stage).")
+        gate = cur[0]
     gate = gate.upper()
     if gate not in ctx.client.gates:
         raise AemError(f"unknown gate {gate!r}", hint=f"Gates: {', '.join(ctx.client.gates)}")

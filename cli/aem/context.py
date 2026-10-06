@@ -10,7 +10,7 @@ import re
 from . import ledger
 from .registry import Context
 
-AGENT_DENIED = ("approve", "reject", "client-said", "allow", "use", "new-client")
+AGENT_DENIED = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard")
 
 
 def preferences(ctx: Context) -> list[dict]:
@@ -72,7 +72,7 @@ def build(ctx: Context) -> dict:
         "- Never write, edit or append to events.jsonl, approvals.jsonl, the client's decisions file, "
         "the rules file or critic/labelled-cases.jsonl yourself, by any tool. When one needs a line, "
         "ask the operator to run the command: /stage, /pause, /resume, /wait, /approve, /reject, "
-        "/client-said or /allow.",
+        "/client-said or /allow. Read them with the Read tool, not the shell.",
         "- Never run `aem " + "`, `aem ".join(AGENT_DENIED) + "` yourself. You may run `aem status`, "
         "`aem check-render`, `aem check-approval`, `aem drift`, `aem report` and `aem import-review`.",
         "- Before placing or delivering a render, `aem check-approval <path>` must pass.",

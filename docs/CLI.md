@@ -21,13 +21,14 @@ later commands use the same one.
 | `stage wait <who>` | Work waits on someone: `waiting_on_<who>`. Waiting ends at the next start, finish or resume of that gate. `wait blocked` writes the skill's `blocked`. |
 | `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end`, `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
 | `report [--no-write]` | Writes `<project>/reports/time.md`. |
-| `approve <item> <path> --gate G` | Appends an approval for that exact file's SHA-256. Operator only (the plugin refuses it from the agent). |
+| `approve <item> [path] [--gate G]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. Operator only (the plugin refuses it from the agent). |
 | `reject <item> --reason TEXT` | Appends a rejection; the item's earlier approval stops standing. Operator only. |
 | `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated, verbatim entry to the client's decisions file, marked "entered by <operator>". Operator only. |
 | `allow <rule-or-command> --reason TEXT [--once]` | An override the guards honour. `--once` is consumed by the next matching call. `--list`, `--revoke ID`. Operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
 | `import-review <csv> [--fps N/D] [--start-tc TC] [--placements FILE]` | Maps a Frame.io comment export to frames, shots and word IDs. Writes review files and draft labelled cases; never edits the decisions file or the critic's file. |
+| `guard` | Decides one tool call, read as JSON on stdin (`{tool, input, cwd}`). Exit 0 allow, 1 deny. The plugin runs it before every file or shell tool call; see Guards below. |
 | `drift [--client ID] [--skills-dir DIR]` | Text exports vs their HTML pages, installed skill vs master, and rule IDs in the skill vs the rules file. |
 | `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. |
 
@@ -135,3 +136,28 @@ once. Open stages are listed and counted to the report time.
 - Skill comparison ignores macOS `._` files and `.DS_Store`.
 - Rule IDs are found with the client's `rule_id_pattern`; a range written as `B-T1-01…05` is read
   as `B-T1-01` only.
+
+## Guards (`aem guard`)
+
+The plugin asks `aem guard` about every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
+`Glob`, `Grep` and `LS` call, the agent's and its subagents'. Every denial is appended to
+`events.jsonl` as a `denial` event, and its message tells the agent why and how the operator can
+approve or override.
+
+| Rule | Denies | Limits |
+|---|---|---|
+| AEM-G01 protected file | `Write`/`Edit`/`NotebookEdit` to a protected file (the registry's `protected_files`, plus `~/.aem/active.json` and the registry itself), compared after resolving symbolic links; a `Bash` command whose text names a protected file (by path or file name), except AEM's read-only commands. | A shell command is read as text: a path assembled at run time (`f=events; echo >> $f.jsonl`), a script file that writes the ledger, or an MCP tool that writes files is not seen. Reading with the `Read` tool is allowed; `cat` of a protected file is denied as a side effect. |
+| AEM-G02 outside the client's folders | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no active project nothing is out of scope. |
+| AEM-G03 blocked command | A `Bash` command containing one of the client's `blocked_commands` (`snapshot --describe` for Joel). | Plain text match: a different spelling or a script that runs it is not seen. |
+| AEM-G04 operator-only aem command | The agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage` or `guard` (also as a path ending in `/aem` or `python3 -m aem`). Holds with no active project. | Calling the Python package from another script, or editing the ledgers through other means, is not seen (AEM-G01 covers the common forms). |
+| AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected), or names an `.fcpxml` but no render; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. |
+
+Overrides: `aem allow <target> --reason …` where the target is a rule ID (`AEM-G02`), a command
+text or a path. `--once` (the default for `/allow`) is consumed by the next call it lets through and
+logged as `allow_used`; a standing allow is logged on every use until `aem allow --revoke ID`.
+
+If `aem` cannot start, the plugin lets the call through and toasts that it was not checked: the
+guards fail open so a broken install does not stop work, and the toast says so every time.
+
+These are recorded checks inside Claude Code, not security boundaries. The operator's own shell,
+another editor, Codex or any tool outside Claude Code is not checked.

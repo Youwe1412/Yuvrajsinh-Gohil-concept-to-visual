@@ -10,6 +10,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { EMPTY_LEDGER, EMPTY_VIEW } from './aem'
 import type { Io } from './aem'
 import { CONTEXT_COMMANDS, contextCommand, contextCompose, contextStart, contextTick } from './context'
+import { GUARD_COMMANDS, guardCall, guardCommand } from './guard'
 import {
   LEDGER_COMMANDS,
   ledgerCommand,
@@ -35,6 +36,8 @@ function io($: EngineInterface): Io {
     status: text => $.ui.status(text),
     now: () => $.clock.now(),
     sessionId: () => $.session.id(),
+    cwd: () => $.session.cwd(),
+    selection: async () => (await $.ui.selection())?.text,
     registerCommand: async spec => {
       await $.command.register(spec)
     },
@@ -53,7 +56,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const x = io($)
-    for (const c of [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS]) await x.registerCommand(c)
+    for (const c of [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...GUARD_COMMANDS]) await x.registerCommand(c)
     await contextStart(x, options)
     await ledgerStart(x, options)
     let tick = 0
@@ -94,9 +97,12 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', async ($, e, next) => {
+    const x = io($)
+    const verdict = await guardCall(x, options, String(e.tool), e as unknown as Record<string, unknown>)
+    if ('deny' in verdict) return { deny: verdict.deny }
     const startedAt = await $.clock.now()
     const ran = await next(e)
-    await ledgerToolDone(io($), options, String(e.tool), startedAt, await $.clock.now())
+    await ledgerToolDone(x, options, String(e.tool), startedAt, await $.clock.now())
     return ran
   })
 
@@ -105,5 +111,8 @@ export const register: Register = (on, options) => {
   }
   for (const c of LEDGER_COMMANDS) {
     on('command.run', { command: c.name }, async ($, e) => ledgerCommand(io($), options, e))
+  }
+  for (const c of GUARD_COMMANDS) {
+    on('command.run', { command: c.name }, async ($, e) => guardCommand(io($), options, e))
   }
 }

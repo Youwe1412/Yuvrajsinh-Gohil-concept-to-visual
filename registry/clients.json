@@ -71,6 +71,24 @@
       "blocked_commands": [
         "snapshot --describe"
       ],
+      "approval_gates": {
+        "command_patterns": [
+          "\\bfcpxml\\b",
+          "\\bplacement\\b",
+          "\\bplace\\b",
+          "\\bdeliver(?:y)?\\b",
+          "Animations Done"
+        ],
+        "write_extensions": [
+          ".fcpxml"
+        ],
+        "media_extensions": [
+          ".mp4",
+          ".mov",
+          ".m4v",
+          ".mxf"
+        ]
+      },
       "review_inbox": {
         "service": "Frame.io",
         "import": "csv",

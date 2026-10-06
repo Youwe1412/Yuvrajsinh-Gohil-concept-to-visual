@@ -151,6 +151,8 @@ export type Io = {
   status: (text: string | undefined) => void
   now: () => Promise<number>
   sessionId: () => Promise<string>
+  cwd: () => Promise<string>
+  selection: () => Promise<string | undefined>
   registerCommand: (spec: CommandSpecLite) => Promise<void>
   getView: () => Promise<AemView>
   setView: (v: AemView) => Promise<void>
@@ -177,4 +179,44 @@ export const EMPTY_LEDGER: AemLedger = { recordedFor: null, lastActivity: 0, idl
 
 export function refusedText(command: string, origin: PromptOrigin): string {
   return `AEM: /${command} can only be typed by the operator (this run came from ${origin.kind}).`
+}
+
+// Reads leading words and flags off a command's arguments and keeps the rest exactly as typed
+// (a reason or the client's words must not be re-spaced). Quotes group a word.
+export type Leading = { words: string[]; flags: Record<string, string | true>; rest: string }
+
+export function leading(input: string, opts: { words: number; valueFlags?: readonly string[]; boolFlags?: readonly string[] }): Leading {
+  const out: Leading = { words: [], flags: {}, rest: '' }
+  let i = 0
+  const readWord = (): string | null => {
+    while (i < input.length && /\s/.test(input[i] ?? '')) i++
+    if (i >= input.length) return null
+    const q = input[i]
+    if (q === '"' || q === "'") {
+      const end = input.indexOf(q, i + 1)
+      const word = end === -1 ? input.slice(i + 1) : input.slice(i + 1, end)
+      i = end === -1 ? input.length : end + 1
+      return word
+    }
+    const start = i
+    while (i < input.length && !/\s/.test(input[i] ?? '')) i++
+    return input.slice(start, i)
+  }
+  for (;;) {
+    const save = i
+    const w = readWord()
+    if (w === null) break
+    if (w.startsWith('--') && opts.valueFlags?.includes(w.slice(2))) {
+      out.flags[w.slice(2)] = readWord() ?? ''
+    } else if (w.startsWith('--') && opts.boolFlags?.includes(w.slice(2))) {
+      out.flags[w.slice(2)] = true
+    } else if (out.words.length < opts.words) {
+      out.words.push(w)
+    } else {
+      i = save
+      break
+    }
+  }
+  out.rest = input.slice(i).replace(/^[ \t]+/, '').replace(/^\n/, '')
+  return out
 }

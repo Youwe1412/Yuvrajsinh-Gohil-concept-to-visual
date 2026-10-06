@@ -12,12 +12,13 @@ export type World = {
   toasts: string[]
   statuses: (string | undefined)[]
   clock: ReturnType<typeof mock.clock>
+  toolsRun: string[]
 }
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
-export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number> } = {}): World {
-  const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }) }
+export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string } = {}): World {
+  const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [] }
   mock.env(on, { HOME: '/Users/test' })
   mock.store(on)
   on('process.run', ($, e) => {
@@ -44,7 +45,10 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('ui.selection', () => ({ value: opts.selection === undefined ? undefined : { text: opts.selection } }))
+  on('session.cwd', () => ({ value: '/projects/P1' }))
   on('tool.call', async ($, e) => {
+    w.toolsRun.push(String(e.tool))
     const ms = opts.toolMs?.[String(e.tool)] ?? 0
     if (ms > 0) await w.clock.advance(ms)
     return { result: 'done' }

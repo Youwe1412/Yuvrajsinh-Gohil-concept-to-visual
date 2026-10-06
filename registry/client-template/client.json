@@ -7,11 +7,17 @@
   "projects": {},
   "decisions_file": "{{CLIENT_ID}}-decisions.md",
   "decisions_order": "newest_first",
-  "decision_scopes": ["channel", "video", "instance"],
+  "decision_scopes": [
+    "channel",
+    "video",
+    "instance"
+  ],
   "rules_file": "rules.md",
   "preference_prefix": "C",
   "labelled_cases_file": "critic/labelled-cases.jsonl",
-  "text_dirs": ["text"],
+  "text_dirs": [
+    "text"
+  ],
   "skill": "{{SKILL}}",
   "skill_master": "Skill/{{SKILL}}",
   "rule_id_pattern": "\\b[A-Z]{1,2}(?:-T\\d)?-\\d{2}\\b",
@@ -24,7 +30,9 @@
     "G6": "Deliver",
     "G7": "Client review"
   },
-  "waiting_on_client_ids": ["{{CLIENT_ID}}"],
+  "waiting_on_client_ids": [
+    "{{CLIENT_ID}}"
+  ],
   "protected_files": {
     "design_system": [
       "{{CLIENT_ID}}-decisions.md",
@@ -37,6 +45,23 @@
     ]
   },
   "blocked_commands": [],
+  "approval_gates": {
+    "command_patterns": [
+      "\\bfcpxml\\b",
+      "\\bplacement\\b",
+      "\\bplace\\b",
+      "\\bdeliver(?:y)?\\b"
+    ],
+    "write_extensions": [
+      ".fcpxml"
+    ],
+    "media_extensions": [
+      ".mp4",
+      ".mov",
+      ".m4v",
+      ".mxf"
+    ]
+  },
   "review_inbox": {
     "service": "Frame.io",
     "import": "csv"

@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, context, drift, ledger, registry, render, review
+from . import VERSION, approvals, clients, context, drift, guard, ledger, registry, render, review
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -58,8 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("approve", help="approve one exact render (operator only)")
     p.add_argument("item")
-    p.add_argument("path")
-    p.add_argument("--gate", required=True)
+    p.add_argument("path", nargs="?", help="default: the item's most recently checked render")
+    p.add_argument("--gate", help="default: the open stage's gate")
     p.add_argument("--note")
     p.add_argument("--source-revision")
     _common(p)
@@ -102,6 +102,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--start-tc", help="timecode of the reviewed file's first frame (default 00:00:00:00)")
     p.add_argument("--placements", help="JSON of shot placements (default: aem.project.json, data/placements.json, data/edit.json)")
     p.add_argument("--window-s", type=float, default=1.0)
+    _common(p)
+
+    p = sub.add_parser("guard", help="decide one tool call (the plugin runs this; JSON on stdin)")
     _common(p)
 
     p = sub.add_parser("drift", help="text exports vs pages, installed skill vs master, skill rule IDs vs rules")
@@ -279,6 +282,22 @@ def cmd_import_review(a):
     return r, text
 
 
+def cmd_guard(a):
+    raw = sys.stdin.read()
+    try:
+        req = json.loads(raw or "{}")
+    except json.JSONDecodeError as exc:
+        raise AemError(f"guard reads one JSON object on stdin ({exc.msg})")
+    r = guard.check(str(req.get("tool") or ""), dict(req.get("input") or {}), req.get("cwd"),
+                    reg_path=getattr(a, "registry", None))
+    if r["decision"] == "deny":
+        err = AemError(f"{r['rule']} {r['rule_name']}: {r['reason']}", data={"ok": True, **r})
+        err.exit_code = 1
+        err.text = f"DENY {r['rule']} ({r['rule_name']}): {r['reason']}\n  {r['how']}"
+        raise err
+    return {"ok": True, **r}, "ALLOW" + (f" (override {r['allow_id']})" if r.get("allow_id") else "")
+
+
 def cmd_drift(a):
     if getattr(a, "client", None):
         reg = registry.load_registry(registry.registry_path(getattr(a, "registry", None)))
@@ -306,7 +325,7 @@ def cmd_new_client(a):
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
     "reject": cmd_reject, "client-said": cmd_client_said, "allow": cmd_allow, "check-approval": cmd_check_approval,
-    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "new-client": cmd_new_client,
+    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "new-client": cmd_new_client,
 }
 
 
