@@ -29,6 +29,10 @@
         "P1": {
           "dir": "P1 - Frontend Design/Animations using Hyperframes/MergeToMaster",
           "note": "P1's HyperFrames project lives below the P1 folder."
+        },
+        "P2": {
+          "dir": "P2 - Claude Code",
+          "note": "P2's current cut is Videos and Media/RoughCut.mp4 (25/1, 3840x2160). No HyperFrames project yet."
         }
       },
       "decisions_file": "joel-decisions.md",
