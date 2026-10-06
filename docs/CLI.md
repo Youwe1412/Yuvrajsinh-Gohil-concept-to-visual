@@ -21,10 +21,11 @@ later commands use the same one.
 | `stage wait <who>` | Work waits on someone: `waiting_on_<who>`. Waiting ends at the next start, finish or resume of that gate. `wait blocked` writes the skill's `blocked`. |
 | `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end`, `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
 | `report [--no-write]` | Writes `<project>/reports/time.md`. |
-| `approve <item> [path] [--gate G]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. Operator only (the plugin refuses it from the agent). |
-| `reject <item> --reason TEXT` | Appends a rejection; the item's earlier approval stops standing. Operator only. |
+| `approve <item> [path] [--gate G] [--row NAME] [--label]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. An image is approved as a still; `--row` approves one row of a plan table in `path`. `--label` also appends the ruling to the client's labelled cases. Operator only (the plugin refuses it from the agent). |
+| `reject <item> --reason TEXT [--path FILE [--row NAME]] [--gate G] [--label]` | Appends a rejection: of that file (or plan row) when given, else of the item's latest approved render, whose approval stops standing. Operator only. |
 | `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated, verbatim entry to the client's decisions file, marked "entered by <operator>". Operator only. |
 | `allow <rule-or-command> --reason TEXT [--once]` | An override the guards honour. `--once` is consumed by the next matching call. `--list`, `--revoke ID`. Operator only. |
+| `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
 | `import-review <csv> [--fps N/D] [--start-tc TC] [--placements FILE]` | Maps a Frame.io comment export to frames, shots and word IDs. Writes review files and draft labelled cases; never edits the decisions file or the critic's file. |
@@ -86,7 +87,7 @@ The skill's line, with the skill's fields first:
 
 AEM's events: `start`, `finish`, `pause`, `resume`, `waiting_on_<who>`, `blocked`, the automatic
 events above, `render_check`, `approval`, `rejection`, `client_said`, `allow`, `allow_used`,
-`allow_revoked`, `review_import`. Extra fields after the five: `source`, `session`, `tool`,
+`allow_revoked`, `review_import`, `denial`, `labelled_case`, `inbox_resolved`. Extra fields after the five: `source`, `session`, `tool`,
 `duration_s`, `render`, `render_sha256`, `result`, `backfilled`. Events entered with `--at` carry
 `"backfilled": true` and the report counts them.
 
@@ -100,6 +101,12 @@ events above, `render_check`, `approval`, `rejection`, `client_said`, `allow`, `
 (with `superseded_by_sha256` and `superseded_by_render`). An approval stands until a later
 rejection of its item or a later stale line for its SHA-256. A stale approval stays stale even if
 the old bytes come back: re-approve.
+
+`item_kind` says what was reviewed: `render` when absent (the skill's lines), `still` for an image
+(G3), `plan_row` for one row of a plan table (G2), which carries `plan_file`, `plan_row` (the row's
+text) and `plan_row_sha256` and leaves `render` and `render_sha256` null. Approvals, rejections and
+stale marks act only within one kind, so rejecting a still does not unseat the render's approval,
+and the status line's stale count is renders only.
 
 ## Time report
 
@@ -173,6 +180,42 @@ Limits:
 - Every `Bash` call starts one `aem rendered` process (about 0.07 s) even when it is not a render,
   because the decision lives in the CLI, not the plugin.
 
+## Review inbox (`aem inbox`)
+
+Off unless the plugin's **Review inbox** setting is on (`reviewInbox`, default off). Then `/inbox`
+opens a pane listing what waits on the operator. `aem inbox` decides the list; the pane only draws
+it and runs the commands each item names.
+
+| Item | Waiting when | Approve runs | Reject runs (asks for a reason) |
+|---|---|---|---|
+| Plan row (G2) | A row of a table in the plan files (`review_inbox.plan_files`, default `shotlist.md`; Joel also `visual-plan.md`) whose text has no approval or rejection. The row is named by its first cell. Changing an approved row's text puts it back, marked "changed since it was approved". | `aem approve <row> <file> --row <row> --gate G2 --label` | `aem reject <row> --path <file> --row <row> --gate G2 --label --reason …` |
+| Still (G3) | An image under `stills/` (`review_inbox.stills_dirs`) whose SHA-256 has no ruling. | `aem approve <item> <file> --gate G3 --label` | `aem reject <item> --path <file> --gate G3 --label --reason …` |
+| Render (G4) | A scene's last `render_check`, if the file is unchanged since and its SHA-256 has no ruling. Failed checks are listed with the failure. | `aem approve <scene> <file> --gate G4 --label` | `aem reject <scene> --path <file> --gate G4 --label --reason …` |
+| Guard denial | A `denial` event from the last `denial_days` (default 2) not yet answered. | `aem allow <rule> --once --inbox-ref denial:<line> --label` ("Allow once") | `aem inbox dismiss denial:<line> --label --reason …` |
+| Client comment | A draft from `aem import-review` (`reviews/<client>/*-labelled-cases.draft.jsonl`) not yet ruled on. Buttons Keep, Change, Remove. | `aem inbox accept <id> --ruling keep\|change\|remove --label` | `aem inbox dismiss <id> --label --reason …` |
+
+Gates come from `review_inbox.gates`. A button whose command is not `approve`, `reject`, `allow` or
+`inbox` is refused by the plugin.
+
+**Labelled cases.** Every ruling made with `--label` appends one line to the client's
+`critic/labelled-cases.jsonl`, in that file's own field names (read from its header line), with
+`"source"` set to the operator's id (`"yuvraj"`). AEM adds `item_kind`, `gate`, `reason`, and where
+they apply `decision`, `inbox_ref`, `rule`, `plan_file`, `plan_row`, `plan_row_sha256`,
+`words_source`. These lines are `"status": "development case"`: they are the operator's rulings,
+not the client's, so they never count toward the critic's labelled set (M-19), and the client's
+words field stays null. An accepted client comment keeps the client's words verbatim from the CSV
+(`words_source` says which rows), takes the shot's latest approved render's SHA-256, and is
+`"labelled"` only when it has the ruling, the words and that SHA-256. `"ruling"` is `keep`
+(approved) or `change` (rejected) for plan rows, stills and renders, the button's ruling for a
+client comment, and null for a guard denial, whose `decision` is `allowed once` or `dismissed`.
+
+Limits: the list is read when `/inbox` runs and after each button, not live; a plan table is
+recognised only as a Markdown table with a header row; a still or render is matched by SHA-256, so
+an identical file under another name counts as already ruled; the mobile app draws no text field,
+so Reject there says to use `/reject` instead. Pressing a button is the operator's act inside the
+pane; the agent cannot press it, and `aem inbox accept`/`dismiss` from the agent's shell is denied
+(AEM-G04).
+
 ## Guards (`aem guard`)
 
 The plugin asks `aem guard` about every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`,
@@ -185,7 +228,7 @@ approve or override.
 | AEM-G01 protected file | `Write`/`Edit`/`NotebookEdit` to a protected file (the registry's `protected_files`, plus `~/.aem/active.json` and the registry itself), compared after resolving symbolic links; a `Bash` command whose text names a protected file (by path or file name), except AEM's read-only commands. | A shell command is read as text: a path assembled at run time (`f=events; echo >> $f.jsonl`), a script file that writes the ledger, or an MCP tool that writes files is not seen. Reading with the `Read` tool is allowed; `cat` of a protected file is denied as a side effect. |
 | AEM-G02 outside the client's folders | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no active project nothing is out of scope. |
 | AEM-G03 blocked command | A `Bash` command containing one of the client's `blocked_commands` (`snapshot --describe` for Joel). | Plain text match: a different spelling or a script that runs it is not seen. |
-| AEM-G04 operator-only aem command | The agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage` or `guard` (also as a path ending in `/aem` or `python3 -m aem`). Holds with no active project. | Calling the Python package from another script, or editing the ledgers through other means, is not seen (AEM-G01 covers the common forms). |
+| AEM-G04 operator-only aem command | The agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage` or `guard`, or `aem inbox accept`/`dismiss` (also as a path ending in `/aem` or `python3 -m aem`). Holds with no active project. | Calling the Python package from another script, or editing the ledgers through other means, is not seen (AEM-G01 covers the common forms). It is a text match, so it over-matches too: a command whose text only mentions one (a heredoc writing these docs, a commit message) is denied; the agent then uses the Edit tool for docs, or the operator types /allow. |
 | AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected), or names an `.fcpxml` but no render; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. |
 
 Overrides: `aem allow <target> --reason …` where the target is a rule ID (`AEM-G02`), a command

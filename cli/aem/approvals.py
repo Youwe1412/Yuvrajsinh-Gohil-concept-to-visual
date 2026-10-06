@@ -5,7 +5,9 @@ The skill's line (references/project-ledgers.md) is kept field for field:
     {"gate", "scene", "render", "render_sha256", "source_revision", "approver", "date"}
 
 AEM adds "type" ("approval" when absent, "rejection", "stale"), "ts" and a few context
-fields. A line is never rewritten: staleness is a new "stale" line naming the approval's
+fields. "item_kind" says what was reviewed: "render" when absent (the skill's lines), "still" for an
+image at G3, "plan_row" for one row of a plan table at G2 (with "plan_file", "plan_row" and
+"plan_row_sha256"). Approvals, rejections and stale marks only act on lines of the same kind. A line is never rewritten: staleness is a new "stale" line naming the approval's
 SHA-256 and the render that replaced it.
 """
 from __future__ import annotations
@@ -16,7 +18,7 @@ from pathlib import Path
 
 from . import ledger
 from .registry import Context
-from .util import AemError, CheckFailed, append_jsonl, read_jsonl, rel_to, sha256_file, strip_private, today, ts
+from .util import AemError, CheckFailed, append_jsonl, read_jsonl, rel_to, sha256_file, sha256_text, strip_private, today, ts
 
 VERSION_SUFFIX = re.compile(r"(?:[_-]v\d+)$", re.I)
 
@@ -27,6 +29,52 @@ def read(ctx: Context) -> list[dict]:
 
 def kind(line: dict) -> str:
     return line.get("type") or "approval"
+
+
+def item_kind(line: dict) -> str:
+    return line.get("item_kind") or "render"
+
+
+STILL_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")
+
+
+def kind_for_path(path: Path) -> str:
+    return "still" if path.suffix.lower() in STILL_EXTENSIONS else "render"
+
+
+def plan_rows(path: Path) -> list[dict]:
+    """Rows of the Markdown tables in a plan file: the first cell names the row (a shot)."""
+    rows, header = [], None
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
+    for i, line in enumerate(lines):
+        t = line.strip()
+        if not t.startswith("|"):
+            header = None
+            continue
+        cells = [c.strip() for c in t.strip("|").split("|")]
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if header is None and re.fullmatch(r"\|?\s*:?-{2,}.*", nxt):
+            header = cells
+            continue
+        # Markdown emphasis or code around the name is not part of it; underscores inside are.
+        name = re.sub(r"^[`*_]+|[`*_]+$", "", cells[0].strip()) if cells else ""
+        if not name or header is None:
+            continue
+        text = " | ".join(cells)
+        rows.append({"row": name, "text": text, "sha256": sha256_text(text), "line": i + 1,
+                     "cells": dict(zip(header, cells))})
+    return rows
+
+
+def find_plan_row(path: Path, row: str) -> dict:
+    hits = [r for r in plan_rows(path) if r["row"] == row]
+    if not hits:
+        raise AemError(f"no row {row!r} in {path.name}", hint="The row is named by its first cell.")
+    if len(hits) > 1:
+        raise AemError(f"{len(hits)} rows named {row!r} in {path.name}; name rows uniquely")
+    return hits[0]
 
 
 def item_from_path(path: Path) -> str:
@@ -104,7 +152,8 @@ def last_checked_render(ctx: Context, item: str) -> str | None:
     return None
 
 
-def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note=None, revision=None) -> dict:
+def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note=None, revision=None,
+            row: str | None = None) -> dict:
     if not path:
         path = last_checked_render(ctx, item)
         if not path:
@@ -122,42 +171,75 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
     p = resolve_path(ctx, path)
     if not p.is_file():
         raise AemError(f"render not found: {p}")
+    if row:
+        r = find_plan_row(p, row)
+        rec = {
+            "gate": gate, "scene": item, "render": None, "render_sha256": None, "source_revision": None,
+            "approver": ctx.client.operator, "date": today(), "type": "approval", "ts": ts(),
+            "item_kind": "plan_row", "plan_file": rel_to(p, ctx.project_dir), "plan_row": r["text"],
+            "plan_row_sha256": r["sha256"],
+        }
+        if note:
+            rec["note"] = note
+        append_jsonl(ctx.approvals_path, rec)
+        ledger.record(ctx, "approval", gate=gate, scene=item, note=note, fill_stage=False, item_kind="plan_row",
+                      plan_file=rec["plan_file"], plan_row_sha256=r["sha256"], source="aem approve")
+        return rec
     sha = sha256_file(p)
     rev, rev_how = source_revision(ctx, item, revision)
+    ik = kind_for_path(p)
     rec = {
         "gate": gate, "scene": item, "render": rel_to(p, ctx.project_dir), "render_sha256": sha,
         "source_revision": rev, "approver": ctx.client.operator, "date": today(),
         "type": "approval", "ts": ts(), "source_revision_from": rev_how,
-        "render_check": last_render_check(ctx, sha),
+        "render_check": last_render_check(ctx, sha) if ik == "render" else "not a render",
     }
+    if ik != "render":
+        rec["item_kind"] = ik
     if note:
         rec["note"] = note
     append_jsonl(ctx.approvals_path, rec)
     ledger.record(ctx, "approval", gate=gate, scene=item, note=note, fill_stage=False,
-                  render=rec["render"], render_sha256=sha, source="aem approve")
+                  render=rec["render"], render_sha256=sha, item_kind=rec.get("item_kind"), source="aem approve")
     return rec
 
 
-def reject(ctx: Context, item: str, reason: str, *, gate=None) -> dict:
+def reject(ctx: Context, item: str, reason: str, *, gate=None, path: str | None = None, row: str | None = None) -> dict:
+    """Reject an item: the file given (or, with row, one plan row), else the item's latest approved render."""
     if not reason or not reason.strip():
         raise AemError("a rejection needs a reason")
-    latest = latest_approval(read(ctx), item)
+    extra: dict = {}
+    if path:
+        p = resolve_path(ctx, path)
+        if not p.is_file():
+            raise AemError(f"file not found: {p}")
+        if row:
+            r = find_plan_row(p, row)
+            ik, render, sha = "plan_row", None, None
+            extra = {"plan_file": rel_to(p, ctx.project_dir), "plan_row": r["text"], "plan_row_sha256": r["sha256"]}
+        else:
+            ik, render, sha = kind_for_path(p), rel_to(p, ctx.project_dir), sha256_file(p)
+        latest = latest_approval(read(ctx), item, of_kind=ik)
+    else:
+        ik = "render"
+        latest = latest_approval(read(ctx), item)
+        render, sha = (latest or {}).get("render"), (latest or {}).get("render_sha256")
     rec = {
         "gate": (gate or (latest or {}).get("gate") or (ledger.current_stage(ledger.read_events(ctx)) or (None,))[0]),
-        "scene": item, "render": (latest or {}).get("render"),
-        "render_sha256": (latest or {}).get("render_sha256"), "source_revision": None,
+        "scene": item, "render": render, "render_sha256": sha, "source_revision": None,
         "approver": ctx.client.operator, "date": today(), "type": "rejection", "ts": ts(),
-        "reason": reason.strip(),
+        "reason": reason.strip(), **({"item_kind": ik} if ik != "render" else {}), **extra,
     }
     append_jsonl(ctx.approvals_path, rec)
     ledger.record(ctx, "rejection", gate=rec["gate"], scene=item, note=reason.strip(), fill_stage=False,
-                  source="aem reject")
+                  render=render, render_sha256=sha, item_kind=rec.get("item_kind"), source="aem reject")
     return rec
 
 
-def latest_approval(lines: list[dict], item: str, gate: str | None = None) -> dict | None:
+def latest_approval(lines: list[dict], item: str, gate: str | None = None, of_kind: str = "render") -> dict | None:
     for line in reversed(lines):
-        if kind(line) == "approval" and line.get("scene") == item and (gate is None or line.get("gate") == gate):
+        if (kind(line) == "approval" and line.get("scene") == item and item_kind(line) == of_kind
+                and (gate is None or line.get("gate") == gate)):
             return line
     return None
 
@@ -170,7 +252,8 @@ def _after(a: dict, b: dict) -> bool:
 def approval_state(lines: list[dict], approval: dict) -> dict:
     """Whether an approval still stands: not rejected after, not marked stale after."""
     for line in lines:
-        if not _after(approval, line) or line.get("scene") != approval.get("scene"):
+        if (not _after(approval, line) or line.get("scene") != approval.get("scene")
+                or item_kind(line) != item_kind(approval)):
             continue
         if kind(line) == "rejection":
             return {"standing": False, "why": f"rejected on {line.get('date')}: {line.get('reason')}"}
@@ -185,7 +268,7 @@ def mark_stale(ctx: Context, item: str, new_sha: str, render_rel: str, reason: s
     marked = []
     done = set()
     for line in lines:
-        if kind(line) != "approval" or line.get("scene") != item:
+        if kind(line) != "approval" or line.get("scene") != item or item_kind(line) != "render":
             continue
         sha = line.get("render_sha256")
         if sha == new_sha or sha in done:
@@ -243,14 +326,15 @@ def summary(ctx: Context) -> dict:
     lines = read(ctx)
     scenes = {}
     for line in lines:
-        if line.get("scene"):
+        if line.get("scene") and item_kind(line) == "render":
             scenes.setdefault(line["scene"], None)
     out = {}
     standing = stale = 0
     for s in scenes:
         a = latest_approval(lines, s)
         if not a:
-            out[s] = {"state": "rejected" if any(kind(l) == "rejection" and l.get("scene") == s for l in lines) else "none"}
+            out[s] = {"state": "rejected" if any(kind(l) == "rejection" and l.get("scene") == s and item_kind(l) == "render"
+                                                 for l in lines) else "none"}
             continue
         st = approval_state(lines, a)
         if st["standing"]:

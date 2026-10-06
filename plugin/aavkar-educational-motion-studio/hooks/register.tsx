@@ -11,6 +11,7 @@ import { EMPTY_LEDGER, EMPTY_VIEW } from './aem'
 import type { Io } from './aem'
 import { CONTEXT_COMMANDS, contextCommand, contextCompose, contextStart, contextTick } from './context'
 import { GUARD_COMMANDS, guardCall, guardCommand } from './guard'
+import { EMPTY_INBOX, INBOX_COMMANDS, INBOX_PANE, cancelReason, drawInbox, inboxCommand, inboxOn, loadInbox, pressAction, submitReason } from './inbox'
 import {
   LEDGER_COMMANDS,
   ledgerCommand,
@@ -26,6 +27,7 @@ import { sentinelAfter, sentinelBefore } from './sentinel'
 
 const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as const, EMPTY_VIEW)
 const ledger = atom({ plugin: 'aavkar-educational-motion-studio', key: 'ledger' } as const, EMPTY_LEDGER)
+const inbox = atom({ plugin: 'aavkar-educational-motion-studio', key: 'inbox' } as const, EMPTY_INBOX)
 
 const TICK_MS = 30_000
 
@@ -50,6 +52,13 @@ function io($: EngineInterface): Io {
     patchLedger: async fn => {
       await update($, ledger, fn)
     },
+    getInbox: () => read($, inbox),
+    patchInbox: async fn => {
+      await update($, inbox, fn)
+    },
+    openPane: async (id, title) => {
+      await $.ui.open({ id, title })
+    },
   }
 }
 
@@ -57,7 +66,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const x = io($)
-    for (const c of [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...GUARD_COMMANDS]) await x.registerCommand(c)
+    const commands = [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...GUARD_COMMANDS, ...(inboxOn(options) ? INBOX_COMMANDS : [])]
+    for (const c of commands) await x.registerCommand(c)
     await contextStart(x, options)
     await ledgerStart(x, options)
     let tick = 0
@@ -120,4 +130,19 @@ export const register: Register = (on, options) => {
   for (const c of GUARD_COMMANDS) {
     on('command.run', { command: c.name }, async ($, e) => guardCommand(io($), options, e))
   }
+  if (!inboxOn(options)) return
+  for (const c of INBOX_COMMANDS) {
+    on('command.run', { command: c.name }, async ($, e) => inboxCommand(io($), options, e))
+  }
+
+  on('ui.render', { component: 'Pane', requestId: INBOX_PANE }, async ($, e) => {
+    const x = io($)
+    const b = await read($, inbox)
+    return drawInbox($.ui.resolve(e), e.surface, b, {
+      press: (item, action) => void pressAction(x, options, item, action),
+      reason: text => void submitReason(x, options, text),
+      cancel: () => void cancelReason(x),
+      reload: () => void loadInbox(x, options),
+    }, e.viewport?.rows ?? 24)
+  })
 }

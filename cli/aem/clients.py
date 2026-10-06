@@ -76,13 +76,13 @@ def _allow_id(target: str, when: str) -> str:
     return "allow-" + sha256_text(target + when)[:8]
 
 
-def allow(ctx: Context, target: str, reason: str, *, once: bool) -> dict:
+def allow(ctx: Context, target: str, reason: str, *, once: bool, inbox_ref: str | None = None) -> dict:
     if not reason or not reason.strip():
         raise AemError("an override needs a reason")
     when = ts()
     aid = _allow_id(target, when)
     rec = ledger.record(ctx, "allow", note=reason.strip(), target=target, allow_id=aid,
-                        once=bool(once), granted_by=ctx.client.operator, source="aem allow")
+                        once=bool(once), granted_by=ctx.client.operator, inbox_ref=inbox_ref, source="aem allow")
     return {"ok": True, "allow_id": aid, "target": target, "once": bool(once), "reason": reason.strip(), "ts": rec["ts"]}
 
 

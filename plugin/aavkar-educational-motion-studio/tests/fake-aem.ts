@@ -13,12 +13,14 @@ export type World = {
   statuses: (string | undefined)[]
   clock: ReturnType<typeof mock.clock>
   toolsRun: string[]
+  commands: string[]
+  panes: string[]
 }
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
 export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string } = {}): World {
-  const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [] }
+  const w: World = { calls: [], stdins: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
   mock.env(on, { HOME: '/Users/test' })
   mock.store(on)
   on('process.run', ($, e) => {
@@ -38,7 +40,14 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
     w.statuses.push(e.text)
     return { value: undefined }
   })
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', ($, e) => {
+    w.commands.push(e.name)
+    return { value: { command: e.name } }
+  })
+  on('ui.open', ($, e) => {
+    w.panes.push(e.id)
+    return { value: { isPlaced: true } }
+  })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))

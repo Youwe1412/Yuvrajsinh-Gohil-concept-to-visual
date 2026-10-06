@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, context, drift, guard, ledger, registry, render, review, sentinel
+from . import VERSION, approvals, clients, context, drift, guard, inbox, ledger, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -62,12 +62,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gate", help="default: the open stage's gate")
     p.add_argument("--note")
     p.add_argument("--source-revision")
+    p.add_argument("--row", help="approve one row of a plan table in <path>, named by its first cell")
+    p.add_argument("--label", action="store_true", help="also append the ruling to the client's labelled cases")
     _common(p)
 
     p = sub.add_parser("reject", help="reject an item, with a reason (operator only)")
     p.add_argument("item")
     p.add_argument("--reason", required=True)
     p.add_argument("--gate")
+    p.add_argument("--path", help="the file rejected (default: the item's latest approved render)")
+    p.add_argument("--row", help="with --path: one row of a plan table, named by its first cell")
+    p.add_argument("--label", action="store_true", help="also append the ruling to the client's labelled cases")
     _common(p)
 
     p = sub.add_parser("client-said", help="record the client's exact words (read from stdin) in the decisions file")
@@ -82,6 +87,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--once", action="store_true", help="consumed by the next matching call")
     p.add_argument("--list", action="store_true", help="list active allows")
     p.add_argument("--revoke", metavar="ALLOW_ID")
+    p.add_argument("--inbox-ref", help="(review inbox) the denial this answers")
+    p.add_argument("--label", action="store_true", help="also append the override to the client's labelled cases")
+    _common(p)
+
+    p = sub.add_parser("inbox", help="what is waiting on the operator: list | accept <id> --ruling R | dismiss <id> --reason")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "accept", "dismiss"])
+    p.add_argument("id", nargs="?")
+    p.add_argument("--ruling", choices=list(inbox.RULINGS))
+    p.add_argument("--reason")
+    p.add_argument("--label", action="store_true")
     _common(p)
 
     p = sub.add_parser("check-approval", help="does this exact file have a standing approval?")
@@ -217,16 +232,25 @@ def cmd_report(a):
 
 def cmd_approve(a):
     ctx = registry.context(a)
-    rec = approvals.approve(ctx, a.item, a.path, a.gate, note=a.note, revision=a.source_revision)
+    rec = approvals.approve(ctx, a.item, a.path, a.gate, note=a.note, revision=a.source_revision, row=a.row)
     rec = strip_private(rec)
-    warn = "" if rec["render_check"] == "pass" else f"\n  note: render check for this file: {rec['render_check']}"
-    return {"ok": True, "approval": rec}, f"Approved {a.item} at {rec['gate']}: {rec['render']} ({rec['render_sha256'][:12]}…){warn}"
+    data = {"ok": True, "approval": rec}
+    if a.label:
+        data["case"] = inbox.label_approval(ctx, rec, a.note)
+    if rec.get("item_kind") == "plan_row":
+        return data, f"Approved plan row {a.item} at {rec['gate']} ({rec['plan_file']}, {rec['plan_row_sha256'][:12]}…)"
+    check = rec.get("render_check")
+    warn = "" if check in ("pass", "not a render") else f"\n  note: render check for this file: {check}"
+    return data, f"Approved {a.item} at {rec['gate']}: {rec['render']} ({rec['render_sha256'][:12]}…){warn}"
 
 
 def cmd_reject(a):
     ctx = registry.context(a)
-    rec = strip_private(approvals.reject(ctx, a.item, a.reason, gate=a.gate))
-    return {"ok": True, "rejection": rec}, f"Rejected {a.item}: {rec['reason']}"
+    rec = strip_private(approvals.reject(ctx, a.item, a.reason, gate=a.gate, path=a.path, row=a.row))
+    data = {"ok": True, "rejection": rec}
+    if a.label:
+        data["case"] = inbox.label_rejection(ctx, rec)
+    return data, f"Rejected {a.item}: {rec['reason']}"
 
 
 def cmd_client_said(a):
@@ -246,7 +270,9 @@ def cmd_allow(a):
         return r, f"Revoked {a.revoke}"
     if not a.target:
         raise AemError("allow needs a rule ID, command or path")
-    r = clients.allow(ctx, a.target, a.reason or "", once=a.once)
+    r = clients.allow(ctx, a.target, a.reason or "", once=a.once, inbox_ref=a.inbox_ref)
+    if a.label:
+        r["case"] = inbox.label_allow(ctx, r, a.inbox_ref)
     return r, f"Allowed {r['target']} ({'once' if r['once'] else 'until revoked'}): {r['reason']}  [{r['allow_id']}]"
 
 
@@ -301,6 +327,25 @@ def cmd_guard(a):
     return {"ok": True, **r}, "ALLOW" + (f" (override {r['allow_id']})" if r.get("allow_id") else "")
 
 
+def cmd_inbox(a):
+    ctx = registry.context(a)
+    if a.action == "list":
+        its = inbox.items(ctx)
+        text = inbox.summary_line(its)
+        for i in its:
+            text += f"\n  [{i['id']}] {i['title']}" + (f"\n      {i['detail']}" if i.get("detail") else "")
+        return {"ok": True, "items": its, "summary": inbox.summary_line(its)}, text
+    if not a.id:
+        raise AemError(f"inbox {a.action} needs an item id", hint="aem inbox lists them.")
+    if a.action == "accept":
+        if not a.ruling:
+            raise AemError("accept needs --ruling keep|change|remove")
+        r = inbox.accept(ctx, a.id, a.ruling, label=a.label, reason=a.reason)
+        return r, f"Accepted {a.id} as {a.ruling}" + (f"; labelled case {r['case']['case_id']}" if r.get("case") else "")
+    r = inbox.dismiss(ctx, a.id, a.reason or "", label=a.label)
+    return r, f"Dismissed {a.id}: {a.reason}"
+
+
 def cmd_rendered(a):
     raw = sys.stdin.read()
     try:
@@ -342,7 +387,7 @@ def cmd_new_client(a):
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
     "reject": cmd_reject, "client-said": cmd_client_said, "allow": cmd_allow, "check-approval": cmd_check_approval,
-    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "rendered": cmd_rendered, "new-client": cmd_new_client,
+    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,
 }
 
 

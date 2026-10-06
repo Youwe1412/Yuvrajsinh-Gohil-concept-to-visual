@@ -73,7 +73,8 @@ def build(ctx: Context) -> dict:
         "the rules file or critic/labelled-cases.jsonl yourself, by any tool. When one needs a line, "
         "ask the operator to run the command: /stage, /pause, /resume, /wait, /approve, /reject, "
         "/client-said or /allow. Read them with the Read tool, not the shell.",
-        "- Never run `aem " + "`, `aem ".join(AGENT_DENIED) + "` yourself. You may run `aem status`, "
+        "- Never run `aem " + "`, `aem ".join(AGENT_DENIED) + "`, `aem inbox accept` or `aem inbox dismiss` "
+        "yourself. You may run `aem status`, `aem inbox` (to list what waits on the operator), "
         "`aem check-render`, `aem check-approval`, `aem drift`, `aem report` and `aem import-review`.",
         "- Before placing or delivering a render, `aem check-approval <path>` must pass.",
         "- After a render command finishes, AEM checks each new render (`aem check-render`) and tells you the "

@@ -64,7 +64,18 @@
   },
   "review_inbox": {
     "service": "Frame.io",
-    "import": "csv"
+    "import": "csv",
+    "plan_files": [
+      "shotlist.md"
+    ],
+    "stills_dirs": [
+      "stills"
+    ],
+    "gates": {
+      "plan_row": "G2",
+      "still": "G3",
+      "render": "G4"
+    }
   },
   "render_sentinel": {
     "command_patterns": [],

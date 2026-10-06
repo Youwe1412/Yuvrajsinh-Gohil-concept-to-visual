@@ -68,6 +68,9 @@ class Guard(WorldCase):
                   "aem guard < req.json"):
             self.assertDenied("AEM-G04", "Bash", command=c)
         self.assertAllowed("Bash", command="aem check-render renders/a.mp4")
+        self.assertDenied("AEM-G04", "Bash", command="aem inbox accept comment:x#1 --ruling keep")
+        self.assertDenied("AEM-G04", "Bash", command="aem inbox dismiss denial:3 --reason no")
+        self.assertAllowed("Bash", command="aem inbox")
 
     def test_g04_holds_with_no_active_project(self):
         (self.w.home / "active.json").unlink()

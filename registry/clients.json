@@ -92,7 +92,19 @@
       "review_inbox": {
         "service": "Frame.io",
         "import": "csv",
-        "note": "Export the review link's comments as CSV; aem import-review reads the header row and maps columns."
+        "note": "Export the review link's comments as CSV; aem import-review reads the header row and maps columns.",
+        "plan_files": [
+          "shotlist.md",
+          "visual-plan.md"
+        ],
+        "stills_dirs": [
+          "stills"
+        ],
+        "gates": {
+          "plan_row": "G2",
+          "still": "G3",
+          "render": "G4"
+        }
       },
       "audio_libraries": [
         {

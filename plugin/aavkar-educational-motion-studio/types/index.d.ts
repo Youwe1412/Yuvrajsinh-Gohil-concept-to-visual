@@ -26,8 +26,32 @@ export type AemLedger = {
   idleMinutes: number
 }
 
+// The review inbox: what `aem inbox` lists, each item carrying the exact aem commands its
+// buttons run, and the pane's own state (which item is asking for a reason, the last result).
+export type AemInboxAction = { label: string; argv: string[]; needs_reason: boolean }
+
+export type AemInboxItem = {
+  id: string
+  kind: string
+  item: string
+  gate: string | null
+  title: string
+  detail: string | null
+  note?: string
+  check?: string
+  actions: AemInboxAction[]
+}
+
+export type AemInbox = {
+  items: AemInboxItem[]
+  summary: string
+  reasonFor: { id: string; label: string } | null
+  message: string | null
+  busy: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger }
+    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger; inbox: AemInbox }
   }
 }

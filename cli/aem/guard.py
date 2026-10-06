@@ -13,7 +13,7 @@ Rules
   AEM-G02  the agent reads or writes outside the active client's design system and projects,
            the AEM repo and shared tools
   AEM-G03  a command the client's registry entry blocks
-  AEM-G04  the agent runs an operator-only aem command
+  AEM-G04  the agent runs an operator-only aem command (including inbox accept and dismiss)
   AEM-G05  a placement, FCPXML or delivery step names a render without a standing approval
 """
 from __future__ import annotations
@@ -163,6 +163,9 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
         command = str(args.get("command") or "")
         for m in AEM_CMD.finditer(command):
             sub = m.group("sub") or m.group("sub2")
+            if sub == "inbox" and re.match(r"\s+(?:accept|dismiss)\b", command[m.end():]):
+                return _deny("AEM-G04", "`aem inbox accept` and `aem inbox dismiss` are the operator's commands, not the agent's.",
+                             "Ask the operator to answer it in the review inbox (/inbox).", command="inbox")
             if sub in OPERATOR_ONLY:
                 slash = {"use": "/aem use", "new-client": "/aem new-client", "stage": "/stage, /pause, /resume or /wait",
                          "guard": "nothing (the plugin runs it)"}.get(sub, f"/{sub}")

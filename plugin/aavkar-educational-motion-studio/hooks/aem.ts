@@ -1,7 +1,7 @@
 // Calls the aem CLI. Every decision AEM makes is the CLI's; this file only runs it.
 import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } from 'claude-code'
 
-import type { AemLedger, AemStatusParts, AemView } from '../types'
+import type { AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
 
@@ -158,6 +158,9 @@ export type Io = {
   setView: (v: AemView) => Promise<void>
   getLedger: () => Promise<AemLedger>
   patchLedger: (fn: (l: AemLedger) => AemLedger) => Promise<void>
+  getInbox: () => Promise<AemInbox>
+  patchInbox: (fn: (b: AemInbox) => AemInbox) => Promise<void>
+  openPane: (id: string, title: string) => Promise<void>
 }
 
 export async function cli(io: Io, options: PluginOptions, args: readonly string[], init?: RunInit): Promise<AemResult> {
