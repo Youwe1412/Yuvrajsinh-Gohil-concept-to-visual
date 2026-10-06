@@ -8,7 +8,7 @@ import type { CommandSpecLite, Io } from './aem'
 export const SECTION_ID = 'aavkar-educational-motion-studio:context'
 
 export const CONTEXT_COMMANDS: readonly CommandSpecLite[] = [
-  { name: 'aem', description: 'Aavkar Educational Motion Studio: use, status, recall, new-client', argumentHint: 'use <client>/<project> | use --clear | status | recall [client] | new-client <id>' },
+  { name: 'aem', description: 'Aavkar Educational Motion Studio: use, status, moments, recall, new-client', argumentHint: 'use <client>/<project> | use --clear | status | moments | recall [client] | new-client <id>' },
 ]
 
 const HELP = [
@@ -16,6 +16,7 @@ const HELP = [
   '  /aem use <client>/<project>   pin a project to THIS session (nothing global is written)',
   '  /aem use --clear              drop the pin; the session goes back to resolving from its folder',
   '  /aem status                   the project, how it was resolved, gate, approvals',
+  '  /aem moments                  the moments table: asked or added, renders, approval, ruling, time',
   "  /aem recall [client]          the client's preferences, last rulings, open questions, labelled cases",
   '  /aem new-client <id> --name NAME --design-system DIR --projects-root DIR [--contact NAME]',
 ].join('\n')
@@ -100,6 +101,11 @@ export async function contextCommand(io: Io, options: PluginOptions, e: CommandR
     }
     await refresh(io, options)
     return { text: r.text || `aem ${sub} exited ${r.code}` }
+  }
+  if (sub === 'moments') {
+    const r = await cli(io, options, ['moments'], { json: false })
+    await refresh(io, options)
+    return { text: r.text }
   }
   if (sub === 'recall') {
     const r = await cli(io, options, ['recall', ...args.slice(1, 2)], { json: false })

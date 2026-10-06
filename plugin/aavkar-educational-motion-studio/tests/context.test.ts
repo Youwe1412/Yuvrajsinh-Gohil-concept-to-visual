@@ -54,6 +54,19 @@ describe('context', () => {
     expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G2 (inferred) · 0:05 · 2 ledger edits to review')
   })
 
+  test('the status line counts moments, approvals and rulings; /aem moments prints the table', async ($, on) => {
+    const w = floor(on, active({
+      status: { json: { ok: true, active: true, client: 'joel', project: 'P1',
+        statusline_parts: { ...PARTS, moments: { moments: 58, approved: 1, ruled: 3 } } } },
+      moments: { text: 'P1 · 58 moments · direction: full notes' },
+    }))
+    await $.session.start(START)
+    expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:05 · 58 moments · 1 approved · 3 ruled')
+    const out = await $.command.run({ command: 'aem', args: 'moments', origin: COMPOSER, presentation: PRESENTATION })
+    expect(out.text).toBe('P1 · 58 moments · direction: full notes')
+    expect(w.calls).toContainEqual(['aem', 'moments'])
+  })
+
   test('/aem recall prints the CLI text', async ($, on) => {
     const w = floor(on, active({ recall: { text: 'AEM recall · Acme' } }))
     await $.session.start(START)

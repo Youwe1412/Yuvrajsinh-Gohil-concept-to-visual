@@ -1,6 +1,14 @@
-"""import-review: map a client's Frame.io comment export to shots and word IDs.
+"""import-review: map a client's Frame.io comment export to moments, shots and word IDs.
 
-Writes, under <project>/reviews/<client id>/:
+Two kinds of export:
+
+  --notes   the client's timestamped notes on the rough cut, before we build: direction, not rulings. Written to
+            <date>-notes.json; `aem moments` reads every notes file to decide which moments were asked (a note
+            covers the moment's word span) and which we added.
+  (review)  comments on the delivered cut: each comment that falls on a moment is an explicit ruling candidate
+            for that moment, the rest video-level feedback. Written as below.
+
+For a review, writes under <project>/reviews/<client id>/:
 
   <date>-frameio.csv                 the CSV, byte for byte
   <date>-review.json                 every comment with its frame, time, shot and nearby word IDs
@@ -26,6 +34,7 @@ from .util import AemError, append_jsonl, read_jsonl, rel_to, sha256_file, today
 
 COLUMN_NAMES = {
     "timecode": ("timecode", "time code", "frame", "timestamp", "time"),
+    "timecode_out": ("timecode out", "out", "out point", "end timecode", "timecode end", "end"),
     "commenter": ("commenter", "author", "name", "user", "commented by"),
     "comment": ("comment", "comment text", "text", "message", "body"),
     "replies": ("replies", "reply", "thread"),
@@ -117,6 +126,79 @@ def load_words(ctx: Context) -> tuple[list[dict], str | None]:
         if words:
             return words, rel
     return [], None
+
+
+def import_notes(ctx: Context, csv_path: str, *, fps_override: str | None = None, start_tc: str | None = None) -> dict:
+    """The client's timestamped notes on the rough cut: which moments they asked for. Not rulings."""
+    from . import moments as momentsmod
+    src = Path(csv_path).expanduser().resolve()
+    if not src.is_file():
+        raise AemError(f"CSV not found: {src}")
+    fps = fpsmod.parse_rate(fps_override) if fps_override else ctx.fps
+    if not fps:
+        raise AemError("the edit's frame rate is unknown", hint="Pass --fps N/D (the rate of the cut the notes are on).")
+    text = src.read_bytes().decode("utf-8-sig", errors="replace")
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        raise AemError(f"{src.name} is empty")
+    header, body = rows[0], rows[1:]
+    cols = map_columns(header)
+    if "timecode" not in cols:
+        raise AemError(f"could not find a timecode column in {header}")
+    offset = fpsmod.timecode_to_frame(start_tc, fps) if start_tc else 0
+    notes, unreadable = [], []
+    for n, row in enumerate(body, 2):
+        rec = dict(zip(header, row))
+        tc = (rec.get(cols["timecode"]) or "").strip()
+        if not tc:
+            continue
+        note = {"row": n, "number": (rec.get(cols.get("number", "")) or "").strip() or None, "timecode": tc,
+                "comment": rec.get(cols["comment"]) if "comment" in cols else "",
+                "commenter": rec.get(cols.get("commenter", ""), None)}
+        try:
+            frame = parse_time(tc, fps) - offset
+        except AemError as exc:
+            unreadable.append({**note, "error": exc.message})
+            continue
+        note.update(frame=frame, seconds=round(float(fpsmod.frame_to_seconds(frame, fps)), 4))
+        out_tc = (rec.get(cols.get("timecode_out", ""), "") or "").strip() if "timecode_out" in cols else ""
+        if out_tc:
+            try:
+                end = parse_time(out_tc, fps) - offset
+                note.update(timecode_out=out_tc, end_frame=end,
+                            end_seconds=round(float(fpsmod.frame_to_seconds(end, fps)), 4))
+            except AemError:
+                pass
+        notes.append(note)
+    outdir = ctx.project_dir / "reviews" / ctx.client.id
+    outdir.mkdir(parents=True, exist_ok=True)
+    dest = outdir / f"{today()}-notes.csv"
+    k = 2
+    while dest.exists() and sha256_file(dest) != sha256_file(src):
+        dest = outdir / f"{today()}-notes-{k}.csv"
+        k += 1
+    if not dest.exists():
+        shutil.copyfile(src, dest)
+    notes_path = dest.with_suffix(".json")
+    write_json_atomic(notes_path, {
+        "kind": "notes", "client": ctx.client.id, "project": ctx.project, "imported": ts(),
+        "csv": rel_to(dest, ctx.project_dir), "csv_sha256": sha256_file(dest), "fps": fpsmod.rate_str(fps),
+        "timeline_start": start_tc or "00:00:00:00", "columns": cols, "comments": notes, "unreadable": unreadable,
+        "meaning": "The client's timestamped notes on the rough cut: direction (which moments were asked), not rulings."})
+    index = momentsmod.build(ctx)
+    momentsmod.write(ctx, index)
+    by_note: dict = {}
+    for m in index["moments"]:
+        for n in m["notes"]:
+            by_note.setdefault((n["number"], n["timecode"]), []).append(m["id"])
+    mapped = [{"number": n["number"], "timecode": n["timecode"], "moments": by_note.get((n["number"], n["timecode"]), [])}
+              for n in notes]
+    ledger.record(ctx, "notes_import", note=f"{len(notes)} timestamped notes from {src.name}", fill_stage=True,
+                  csv=rel_to(dest, ctx.project_dir), source="aem import-review --notes")
+    return {"ok": True, "notes": len(notes), "unreadable": len(unreadable), "fps": fpsmod.rate_str(fps),
+            "mapped": mapped, "covering_no_moment": [m for m in mapped if not m["moments"]],
+            "moments": index["moments_count"], "asked": index["asked"], "added": index["added"],
+            "direction": index["direction"], "files": {"csv": str(dest), "notes": str(notes_path)}, "columns": cols}
 
 
 def import_review(ctx: Context, csv_path: str, *, fps_override: str | None = None, start_tc: str | None = None,

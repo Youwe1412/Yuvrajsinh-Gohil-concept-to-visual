@@ -71,5 +71,44 @@
       "renders"
     ]
   },
-  "idle_minutes": 10
+  "idle_minutes": 10,
+  "moments": {
+    "plan_files": [
+      "visual-plan.md"
+    ],
+    "shotlist_files": [
+      "shotlist.md"
+    ],
+    "placement_files": [
+      "data/edit.json",
+      "renders/*/PLACEMENTS.csv"
+    ]
+  },
+  "stage_groups": {
+    "design": [
+      "G1",
+      "G2",
+      "G3"
+    ],
+    "build": [
+      "G4"
+    ],
+    "review": [
+      "G5",
+      "G7"
+    ],
+    "placement": [
+      "G6"
+    ]
+  },
+  "review_profile": {
+    "unit": "whole video",
+    "approval_channel": "",
+    "notes_channel": "",
+    "other_channels": [],
+    "sees_process": false,
+    "note_window_s": 1.0,
+    "direction": {},
+    "summary": "How {{CONTACT}} reviews: what they see (the finished video or each animation), where approval, timestamped notes and other feedback arrive, and whether they see the process."
+  }
 }

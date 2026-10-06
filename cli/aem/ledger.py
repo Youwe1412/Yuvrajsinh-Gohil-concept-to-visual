@@ -349,6 +349,25 @@ def _measure(span, tl, keys) -> dict:
     }
 
 
+# Which gates are design, build, review and placement work, when the registry does not say (by the gate's name).
+STAGE_GROUP_WORDS = [("design", ("input", "plan", "still", "brief", "design")), ("build", ("render", "build")),
+                     ("review", ("critique", "critic", "review")), ("placement", ("deliver", "placement", "place"))]
+
+
+def stage_groups(ctx: Context) -> "OrderedDict[str, list]":
+    given = ctx.client.raw.get("stage_groups")
+    if given:
+        return OrderedDict((k, list(v)) for k, v in given.items())
+    out: OrderedDict = OrderedDict((g, []) for g, _ in STAGE_GROUP_WORDS)
+    for gate, name in ctx.client.gates.items():
+        low = str(name).lower()
+        for g, words in STAGE_GROUP_WORDS:
+            if any(w in low for w in words):
+                out[g].append(gate)
+                break
+    return out
+
+
 COLUMNS = [
     ("wall_s", "Wall"), ("agent_busy_s", "Agent busy"), ("idle_s", "Idle"),
     ("waiting_on_client_s", "Waiting on client"), ("waiting_on_others_s", "Waiting on others"),
@@ -381,12 +400,21 @@ def report(ctx: Context, *, write: bool = True) -> dict:
     per_pair = OrderedDict()
     for k, iv in stages.items():
         per_pair[f"{k[0]} · {k[1] or '(whole video)'}"] = _measure(iv, tl, [k])
+    per_group = OrderedDict()
+    for group, gates_ in stage_groups(ctx).items():
+        keys = [k for k in stages if k[0] in gates_]
+        span = [x for k in keys for x in stages[k]]
+        if span:
+            per_group[f"{group} ({', '.join(gates_)})"] = _measure(span, tl, keys)
+    per_moment, unattributed, idle_moments = _moment_time(ctx, stages, tl)
     all_stage = [x for iv in stages.values() for x in iv]
     in_session = _union(tl["sessions"])
     outside = _length(in_session) - _length(_intersect(in_session, all_stage))
     result = {
         "client": ctx.client.id, "project": ctx.project, "generated": ts(rt),
         "events": len(events), "per_gate": per_gate, "per_scene": per_scene, "per_stage": per_pair,
+        "per_stage_group": per_group, "per_moment": per_moment, "unattributed": unattributed,
+        "moments_without_stages": idle_moments,
         "open_stages": [f"{g} · {s or '(whole video)'}" for g, s in tl["open"]],
         "session_time_outside_stages_s": outside,
         "observed_session_s": _length(in_session),
@@ -401,6 +429,26 @@ def report(ctx: Context, *, write: bool = True) -> dict:
         result["written"] = str(out)
     result["markdown"] = md
     return result
+
+
+def _moment_time(ctx: Context, stages: dict, tl: dict) -> tuple["OrderedDict[str, dict]", dict | None, int]:
+    """Stage time per moment: only stages whose scene names the moment. The rest stays unattributed."""
+    from . import moments as momentsmod
+    try:
+        index = momentsmod.read_index(ctx) or momentsmod.build(ctx)
+    except (OSError, ValueError, AemError):
+        return OrderedDict(), None, 0
+    ms = index.get("moments") or []
+    out: OrderedDict = OrderedDict()
+    claimed = set()
+    for m in ms:
+        keys = [k for k in stages if k[1] and momentsmod._matches(k[1], m)]
+        if keys:
+            claimed.update(keys)
+            out[m["id"]] = _measure([x for k in keys for x in stages[k]], tl, keys)
+    rest = [k for k in stages if k not in claimed]
+    loose = _measure([x for k in rest for x in stages[k]], tl, rest) if rest else None
+    return out, loose, len(ms) - len(out)
 
 
 def _table(rows: "OrderedDict[str, dict]", first: str) -> list[str]:
@@ -449,6 +497,17 @@ def render_markdown(ctx: Context, r: dict) -> str:
         L += ["## Per scene", ""] + _table(r["per_scene"], "Scene") + [""]
     if r["per_stage"]:
         L += ["## Per gate and scene", ""] + _table(r["per_stage"], "Stage") + [""]
+    if r["per_stage_group"]:
+        L += ["## Per stage (design, build, review, placement)", ""] + _table(r["per_stage_group"], "Stage") + [""]
+    if r["per_moment"] or r["unattributed"]:
+        rows = OrderedDict(r["per_moment"])
+        if r["unattributed"]:
+            rows["(unattributed: whole-video stages, or scenes that name no moment)"] = r["unattributed"]
+        L += ["## Per moment", "",
+              "Only stages whose scene names a moment are attributed to it; whole-video stages stay unattributed and "
+              "are never spread across moments." + (f" {r['moments_without_stages']} moment(s) have no stage of their own."
+                                                     if r["moments_without_stages"] else ""), ""]
+        L += _table(rows, "Moment") + [""]
     L += [
         "## Outside any stage",
         "",

@@ -122,6 +122,50 @@
           "path": null
         }
       ],
+      "moments": {
+        "plan_files": [
+          "visual-plan.md"
+        ],
+        "shotlist_files": [
+          "shotlist.md"
+        ],
+        "placement_files": [
+          "data/edit.json",
+          "renders/*/PLACEMENTS.csv"
+        ],
+        "note": "Moments come from the skill's own files: visual-plan.md and shotlist.md rows (first cell the moment, columns for word IDs, job, treatment, knows before, knows after, must stay true, where the picture stops being accurate, rule IDs); else the placements of P1's kind."
+      },
+      "stage_groups": {
+        "design": [
+          "G1",
+          "G2",
+          "G3"
+        ],
+        "build": [
+          "G4"
+        ],
+        "review": [
+          "G5",
+          "G7"
+        ],
+        "placement": [
+          "G6"
+        ]
+      },
+      "review_profile": {
+        "unit": "whole video",
+        "approval_channel": "Frame.io",
+        "notes_channel": "Frame.io",
+        "other_channels": [
+          "WhatsApp"
+        ],
+        "sees_process": false,
+        "note_window_s": 1.0,
+        "direction": {
+          "P2": "none"
+        },
+        "summary": "Joel reviews the finished video, never individual animations. Approval, feedback and any timestamped instructions arrive on Frame.io; some feedback arrives on WhatsApp. He never sees the production process. How much he directs varies by video, and the absence of notes is itself a decision: on P1 he gave 66 timestamped notes; on P2 none, trusting the editor's judgment."
+      },
       "idle_minutes": 10,
       "render_sentinel": {
         "command_patterns": [

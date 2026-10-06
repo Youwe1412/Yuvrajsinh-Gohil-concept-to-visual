@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, codex, context, doctor, drift, inbox, integrity, ledger, observe, operator, recall, registry, render, review, sentinel
+from . import VERSION, approvals, clients, codex, context, doctor, drift, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -124,6 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--start-tc", help="timecode of the reviewed file's first frame (default 00:00:00:00)")
     p.add_argument("--placements", help="JSON of shot placements (default: aem.project.json, data/placements.json, data/edit.json)")
     p.add_argument("--window-s", type=float, default=1.0)
+    p.add_argument("--notes", action="store_true",
+                   help="the client's timestamped notes on the rough cut (which moments were asked), not a review")
+    _common(p)
+
+    p = sub.add_parser("moments", help="build moments/index.json from the plan, placements, words, notes, renders and rulings")
+    p.add_argument("--no-write", action="store_true")
     _common(p)
 
     p = sub.add_parser("observe", help="record one tool call, and say if it delivers unapproved media (the plugin runs this; JSON on stdin)")
@@ -198,6 +204,13 @@ def _status(ctx) -> dict:
     if integ["findings"]:
         line += f" · {integ['findings']} ledger edit{'' if integ['findings'] == 1 else 's'} to review"
     parts["integrity"] = integ["findings"]
+    try:
+        mc = moments.counts(ctx)
+    except (OSError, ValueError, AemError):
+        mc = None
+    if mc:
+        line += f" · {mc['moments']} moments · {mc['approved']} approved · {mc['ruled']} ruled"
+    parts["moments"] = mc
     return {**ctx.summary(), "stage": st, "approvals": ap, "integrity": integ,
             "last_render_check": last_check, "statusline": line, "statusline_parts": parts,
             "idle_minutes": ctx.client.idle_minutes, "gates": ctx.client.gates}
@@ -403,8 +416,25 @@ def _render_text(r: dict) -> str:
     return "\n".join(lines)
 
 
+def cmd_moments(a):
+    ctx = registry.context(a)
+    index = moments.build(ctx)
+    if not a.no_write:
+        index["written"] = str(moments.write(ctx, index))
+    return index, moments.table(index) + (f"\nWritten to {index['written']}" if index.get("written") else "")
+
+
 def cmd_import_review(a):
     ctx = registry.context(a)
+    if a.notes:
+        r = review.import_notes(ctx, a.csv, fps_override=a.fps, start_tc=a.start_tc)
+        text = (f"{r['notes']} timestamped notes at {r['fps']}: {r['moments']} moments, {r['asked']} asked, "
+                f"{r['added']} added; direction {r['direction']}.")
+        if r["covering_no_moment"]:
+            text += "\n  covering no moment: " + ", ".join(f"#{n['number'] or n['timecode']}" for n in r["covering_no_moment"])
+        if r["unreadable"]:
+            text += f"\n  {r['unreadable']} row(s) could not be read"
+        return r, text
     r = review.import_review(ctx, a.csv, fps_override=a.fps, start_tc=a.start_tc, placements=a.placements, window_s=a.window_s)
     text = (f"{r['comments']} comments at {r['fps']}: {r['mapped_to_shots']} on shots, {r['about_edit']} about the edit, "
             f"{r['unreadable']} unreadable.\n" + "\n".join(f"  {k}: {v}" for k, v in r["files"].items()))
@@ -504,7 +534,7 @@ def cmd_new_client(a):
 
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "recall": cmd_recall, "stage": cmd_stage,
-    "report": cmd_report, "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
+    "report": cmd_report, "moments": cmd_moments, "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
     "check-approval": cmd_check_approval, "check-render": cmd_check_render, "import-review": cmd_import_review,
     "integrity": cmd_integrity, "accept-edit": cmd_accept_edit, "doctor": cmd_doctor, "drift": cmd_drift, "observe": cmd_observe,
     "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,

@@ -179,6 +179,7 @@ export function statusLine(v: AemView, nowMs: number): string {
   }
   if (p.stale > 0) bits.push(`${p.stale} stale`)
   if ((p.integrity ?? 0) > 0) bits.push(`${p.integrity} ledger edit${p.integrity === 1 ? '' : 's'} to review`)
+  if (p.moments) bits.push(`${p.moments.moments} moments`, `${p.moments.approved} approved`, `${p.moments.ruled} ruled`)
   return bits.join(' · ')
 }
 

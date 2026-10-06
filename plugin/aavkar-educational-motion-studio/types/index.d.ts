@@ -10,6 +10,8 @@ export type AemStatusParts = {
   integrity?: number
   // The open stage was opened by AEM itself: no stage was open when the work changed a file (1.0.0).
   inferred?: boolean
+  // The project's moments (1.1.0): how many, how many have a standing approval, how many the client ruled on.
+  moments?: { moments: number; approved: number; ruled: number } | null
 }
 
 // How aem resolved the project: env, session pin, folder, folder (design system), flag or none.

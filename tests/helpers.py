@@ -326,6 +326,51 @@ class JoelWorld(World):
         self.sb.cleanup()
 
 
+P1_FIXTURE = REPO / "tests" / "fixtures" / "p1"
+# P1 on the drive, for the tests that need its real frames; they are skipped when it is not mounted.
+P1_DRIVE = Path("/Volumes/T7 Red/Yuvraj Folder/Freelance Work/Joel Belton - MergeToMaster/P1 - Frontend Design/"
+                "Animations using Hyperframes/MergeToMaster")
+
+
+class P1World(World):
+    """Joel's real registry entry (a sandbox copy) with P1 as delivered: its 66 placements, word map, the
+    rulings after delivery, rules and decisions (tests/fixtures/p1), and a stand-in file for each delivered render
+    (its bytes are not real; its name is). Joel's notes are imported by the test that needs them."""
+
+    def __init__(self):
+        self.sb = isolation.sandbox(prefix="aem-p1-")
+        reg = json.loads(self.sb.registry.read_text(encoding="utf-8"))
+        joel = next(c for c in reg["clients"] if c["id"] == "joel")
+        self.tmp = self.sb.root
+        self.home = self.sb.home
+        self.registry = self.sb.registry
+        self.root = Path(joel["projects_root"])
+        self.ds = Path(joel["design_system"])
+        self.project = self.root / joel["projects"]["P1"]["dir"]
+        self.skills = self.tmp / "skills"
+        for d in (self.ds / "critic", self.project / "data", self.project / "renders" / "v08", self.skills):
+            d.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(P1_FIXTURE / "joel-decisions.md", self.ds / "joel-decisions.md")
+        shutil.copyfile(P1_FIXTURE / "rules.md", self.ds / "rules.md")
+        shutil.copyfile(P1_FIXTURE / "labelled-cases.jsonl", self.ds / "critic" / "labelled-cases.jsonl")
+        shutil.copyfile(P1_FIXTURE / "edit.json", self.project / "data" / "edit.json")
+        shutil.copyfile(P1_FIXTURE / "words.json", self.project / "data" / "words.json")
+        shutil.copyfile(P1_FIXTURE / "PLACEMENTS.csv", self.project / "renders" / "v08" / "PLACEMENTS.csv")
+        (self.project / "frame.md").write_text('---\nfps           : "24000/1001"\n---\n', encoding="utf-8")
+        for name in (P1_FIXTURE / "renders-v08.txt").read_text().split():
+            (self.project / "renders" / "v08" / name).write_bytes(f"stand-in {name}".encode())
+        self.notes_csv = P1_FIXTURE / "frameio-notes.csv"
+        self.env = {**os.environ, **self.sb.env}
+        for name in ("AEM_FIXED_NOW", "AEM_PROJECT", "AEM_PROJECT_SOURCE", "AEM_OPERATOR_NONCE"):
+            self.env.pop(name, None)
+
+    def import_notes(self):
+        return self.run("import-review", str(self.notes_csv), "--notes", check=True)
+
+    def cleanup(self):
+        self.sb.cleanup()
+
+
 def make_video(path: Path, *, frames: int = 50, fps: str = "25", size: str = "320x180", box: str | None = None,
                color: str = "0x202020", codec: str = "libx264", pix_fmt: str = "yuv420p", graph: str | None = None) -> Path:
     """A synthetic clip: flat background, optional drawbox filter (flashes) or a whole lavfi graph (motion)."""

@@ -1,0 +1,614 @@
+[
+ {
+  "kind": "teaching",
+  "name": "teach-opening",
+  "start": 0,
+  "duration": 6.25,
+  "variables": {
+   "which": "opening"
+  }
+ },
+ {
+  "type": "image",
+  "name": "ai-cartoon.webp",
+  "src": "assets/media/ai-cartoon.webp",
+  "start": 11.583917,
+  "duration": 3.041708,
+  "mediaStart": 0
+ },
+ {
+  "kind": "cartoon-rings",
+  "name": "cartoon-rings",
+  "start": 16.375,
+  "duration": 5.208917,
+  "variables": {}
+ },
+ {
+  "kind": "reference-ui",
+  "name": "reference-wag",
+  "start": 25.25025,
+  "duration": 4.291958,
+  "variables": {
+   "which": "wag"
+  }
+ },
+ {
+  "kind": "title-l",
+  "name": "t01_mission",
+  "start": 30.5005,
+  "duration": 7.417083,
+  "variables": {
+   "slug": "t01_mission",
+   "kicker": "",
+   "line1": "30 DAYS",
+   "line2": "to work out what that feeling actually is",
+   "accentWord": "30 DAYS",
+   "accentAt": 14,
+   "beats": "",
+   "scale": 1
+  }
+ },
+ {
+  "type": "video",
+  "name": "scroll.mp4",
+  "src": "assets/media/scroll.mp4",
+  "start": 44.625,
+  "duration": 3.5,
+  "mediaStart": 0.5
+ },
+ {
+  "kind": "title-l",
+  "name": "t02_forever",
+  "start": 52.761041666666664,
+  "duration": 2.4190833333333335,
+  "variables": {
+   "slug": "t02_forever",
+   "kicker": "",
+   "line1": "I think I found something",
+   "line2": "that changes AI frontend design forever",
+   "accentWord": "forever",
+   "accentAt": 87,
+   "beats": "",
+   "scale": 1
+  }
+ },
+ {
+  "kind": "comedy-title",
+  "name": "comedy-title",
+  "start": 60.375375,
+  "duration": 6.958292,
+  "variables": {}
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-promise",
+  "start": 67.542,
+  "duration": 4.25,
+  "variables": {
+   "which": "promise"
+  }
+ },
+ {
+  "kind": "title-l",
+  "name": "t03_name",
+  "start": 80.5005,
+  "duration": 5.25025,
+  "variables": {
+   "slug": "t03_name",
+   "kicker": "",
+   "line1": "IF YOU CAN’T NAME IT",
+   "line2": "you’ll keep generating it",
+   "accentWord": "NAME IT",
+   "accentAt": 35,
+   "beats": "",
+   "scale": 1
+  }
+ },
+ {
+  "kind": "title-s",
+  "name": "t04_bad",
+  "start": 87.79604166666667,
+  "duration": 2.4607916666666667,
+  "variables": {
+   "slug": "t04_bad",
+   "mode": "cut",
+   "kicker": "THE OBVIOUS ANSWER",
+   "line1": "BAD",
+   "strike": "yes",
+   "strikeAt": 14,
+   "scale": 1.5
+  }
+ },
+ {
+  "kind": "reference-ui",
+  "name": "reference-nova",
+  "start": 92.667333,
+  "duration": 6.667,
+  "variables": {
+   "which": "nova"
+  }
+ },
+ {
+  "kind": "scorecard-92",
+  "name": "scorecard-92",
+  "start": 101.5005,
+  "duration": 16.458792,
+  "variables": {}
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-recognition",
+  "start": 119.744625,
+  "duration": 5.714041666666674,
+  "variables": {
+   "which": "recognition"
+  }
+ },
+ {
+  "kind": "next-token",
+  "name": "next-token",
+  "start": 127.542208,
+  "duration": 5.457792,
+  "variables": {}
+ },
+ {
+  "kind": "statistical-middle",
+  "name": "statistical-middle",
+  "start": 135.333667,
+  "duration": 5.666333,
+  "variables": {}
+ },
+ {
+  "kind": "hundred-runs",
+  "name": "hundred-runs",
+  "start": 143.875875,
+  "duration": 16.833167,
+  "variables": {}
+ },
+ {
+  "kind": "title-s",
+  "name": "t05_average",
+  "start": 160.709042,
+  "duration": 2.083416,
+  "variables": {
+   "slug": "t05_average",
+   "mode": "cut",
+   "kicker": "",
+   "line1": "AVERAGE",
+   "strike": "",
+   "strikeAt": 0,
+   "scale": 1.5
+  }
+ },
+ {
+  "kind": "title-l",
+  "name": "t06_nodecisions",
+  "start": 162.792458,
+  "duration": 5.125125,
+  "variables": {
+   "slug": "t06_nodecisions",
+   "kicker": "",
+   "line1": "NO PASSION|NO CHARACTER|NO DECISIONS",
+   "line2": "",
+   "accentWord": "",
+   "accentAt": 0,
+   "beats": "0|23|51",
+   "scale": 1
+  }
+ },
+ {
+  "kind": "fingerprint",
+  "name": "fingerprint",
+  "start": 171.333667,
+  "duration": 5.874875,
+  "variables": {}
+ },
+ {
+  "kind": "title-s",
+  "name": "t07_damn",
+  "start": 185.75075,
+  "duration": 1.290958,
+  "variables": {
+   "slug": "t07_damn",
+   "mode": "speak",
+   "kicker": "",
+   "line1": "“damn, these look great”",
+   "strike": "",
+   "strikeAt": 0,
+   "scale": 1
+  }
+ },
+ {
+  "kind": "title-s",
+  "name": "t08_okay",
+  "start": 188.3,
+  "duration": 1.325625,
+  "variables": {
+   "slug": "t08_okay",
+   "mode": "cut",
+   "kicker": "",
+   "line1": "“okay.”",
+   "strike": "",
+   "strikeAt": 0,
+   "scale": 1.5
+  }
+ },
+ {
+  "kind": "title-s",
+  "name": "t09_oh",
+  "start": 191.97,
+  "duration": 1.5305,
+  "variables": {
+   "slug": "t09_oh",
+   "mode": "cut",
+   "kicker": "",
+   "line1": "“oh.”",
+   "strike": "",
+   "strikeAt": 0,
+   "scale": 2.1
+  }
+ },
+ {
+  "kind": "tells-a",
+  "name": "tells-a",
+  "start": 197.625625,
+  "duration": 12.0,
+  "variables": {}
+ },
+ {
+  "kind": "tells-b",
+  "name": "tells-b",
+  "start": 209.625625,
+  "duration": 3.582917,
+  "variables": {}
+ },
+ {
+  "type": "video",
+  "name": "frontend-plugin.mp4",
+  "src": "assets/media/frontend-plugin.mp4",
+  "start": 214.625,
+  "duration": 5.5,
+  "mediaStart": 2
+ },
+ {
+  "kind": "wathan-post",
+  "name": "wathan-post",
+  "start": 229.959292,
+  "duration": 12.290958,
+  "variables": {}
+ },
+ {
+  "kind": "training-loop",
+  "name": "training-loop",
+  "start": 243.041708,
+  "duration": 22.917584,
+  "variables": {}
+ },
+ {
+  "kind": "convergence",
+  "name": "convergence",
+  "start": 290.333667,
+  "duration": 27.16633300000001,
+  "variables": {}
+ },
+ {
+  "type": "video",
+  "name": "06-bootstrap.mp4",
+  "src": "assets/media/06-bootstrap.mp4",
+  "start": 330.75,
+  "duration": 5.75,
+  "mediaStart": 1
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-decisions",
+  "start": 336.5,
+  "duration": 7.917,
+  "variables": {
+   "which": "decisions"
+  }
+ },
+ {
+  "type": "video",
+  "name": "BoringPrompt.mp4",
+  "src": "assets/media/BoringPrompt.mp4",
+  "start": 351.209,
+  "duration": 2.75,
+  "mediaStart": 3
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-accepted",
+  "start": 353.959,
+  "duration": 4,
+  "variables": {
+   "which": "accepted"
+  }
+ },
+ {
+  "kind": "pro-vs-nonpro",
+  "name": "pro-vs-nonpro",
+  "start": 363.291958,
+  "duration": 15.542209,
+  "variables": {}
+ },
+ {
+  "kind": "title-l",
+  "name": "t10_fix",
+  "start": 378.834167,
+  "duration": 2.74975,
+  "variables": {
+   "slug": "t10_fix",
+   "kicker": "",
+   "line1": "So is the fix just to",
+   "line2": "make more decisions?",
+   "accentWord": "decisions",
+   "accentAt": 55,
+   "beats": "",
+   "scale": 1
+  }
+ },
+ {
+  "kind": "claude-bin",
+  "name": "claude-bin",
+  "start": 381.584,
+  "duration": 4.540999999999997,
+  "variables": {
+   "mark": "both"
+  }
+ },
+ {
+  "kind": "stat-50ms",
+  "name": "stat-50ms",
+  "start": 386.125125,
+  "duration": 4.874875,
+  "variables": {}
+ },
+ {
+  "kind": "trust",
+  "name": "trust",
+  "start": 402.917583,
+  "duration": 16.708042,
+  "variables": {}
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-density",
+  "start": 423.167,
+  "duration": 4,
+  "variables": {
+   "which": "density"
+  }
+ },
+ {
+  "kind": "stripe-space",
+  "name": "stripe-space",
+  "start": 427.166833,
+  "duration": 8.299958333333333,
+  "variables": {}
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-type",
+  "start": 435.625,
+  "duration": 8.291,
+  "variables": {
+   "which": "type"
+  }
+ },
+ {
+  "kind": "button-states",
+  "name": "button-states",
+  "start": 444.834167,
+  "duration": 8.290958,
+  "variables": {}
+ },
+ {
+  "kind": "character",
+  "name": "character",
+  "start": 455.208542,
+  "duration": 5.791458,
+  "variables": {}
+ },
+ {
+  "kind": "title-l",
+  "name": "t11_bigq",
+  "start": 462.291958,
+  "duration": 4.708042,
+  "variables": {
+   "slug": "t11_bigq",
+   "kicker": "",
+   "line1": "How do we keep the decisions",
+   "line2": "and the speed?",
+   "accentWord": "and the speed",
+   "accentAt": 86,
+   "beats": "",
+   "scale": 1
+  }
+ },
+ {
+  "kind": "board-a",
+  "name": "board-a",
+  "start": 469.542208,
+  "duration": 6.166834,
+  "variables": {}
+ },
+ {
+  "kind": "board-bf",
+  "name": "board-bf",
+  "start": 480.333667,
+  "duration": 4.0,
+  "variables": {
+   "active": 1,
+   "previous": 0
+  }
+ },
+ {
+  "kind": "audience-questions",
+  "name": "audience-questions",
+  "start": 485.318167,
+  "duration": 9.175833,
+  "variables": {}
+ },
+ {
+  "kind": "specific-generic",
+  "name": "specific-generic",
+  "start": 498.875875,
+  "duration": 7.791458,
+  "variables": {}
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-gaps",
+  "start": 510.417,
+  "duration": 7.25,
+  "variables": {
+   "which": "gaps"
+  }
+ },
+ {
+  "kind": "board-bf",
+  "name": "board-bf",
+  "start": 525.166833,
+  "duration": 4.0,
+  "variables": {
+   "active": 2,
+   "previous": 1
+  }
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-template",
+  "start": 532.917,
+  "duration": 9.458,
+  "variables": {
+   "which": "template"
+  }
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-v0",
+  "start": 543.917,
+  "duration": 6.625,
+  "variables": {
+   "which": "v0"
+  }
+ },
+ {
+  "kind": "board-bf",
+  "name": "board-bf",
+  "start": 553.959292,
+  "duration": 4.666333,
+  "variables": {
+   "active": 3,
+   "previous": 2
+  }
+ },
+ {
+  "kind": "exclusions",
+  "name": "exclusions",
+  "start": 558.625625,
+  "duration": 5.416083,
+  "variables": {}
+ },
+ {
+  "kind": "parallel-1",
+  "name": "parallel-1",
+  "start": 581.75075,
+  "duration": 4.0,
+  "variables": {}
+ },
+ {
+  "kind": "board-bf",
+  "name": "board-bf",
+  "start": 585.834167,
+  "duration": 2.332666,
+  "variables": {
+   "active": 4,
+   "previous": 3
+  }
+ },
+ {
+  "kind": "parallel-2",
+  "name": "parallel-2",
+  "start": 588.166833,
+  "duration": 6.5005,
+  "variables": {}
+ },
+ {
+  "type": "video",
+  "name": "AIResponseToBuild.mp4",
+  "src": "assets/media/AIResponseToBuild-v08-reframed.mp4",
+  "start": 594.667333,
+  "duration": 4.958292,
+  "mediaStart": 0
+ },
+ {
+  "kind": "parallel-3",
+  "name": "parallel-3",
+  "start": 599.625625,
+  "duration": 7.457792,
+  "variables": {}
+ },
+ {
+  "kind": "board-bf",
+  "name": "board-bf",
+  "start": 607.125125,
+  "duration": 4.375375,
+  "variables": {
+   "active": 5,
+   "previous": 4
+  }
+ },
+ {
+  "type": "video",
+  "name": "06-mascots.mp4",
+  "src": "assets/media/06-mascots.mp4",
+  "start": 615.125,
+  "duration": 4.125,
+  "mediaStart": 0
+ },
+ {
+  "kind": "teaching",
+  "name": "teach-refine",
+  "start": 619.25,
+  "duration": 2.917,
+  "variables": {
+   "which": "refine"
+  }
+ },
+ {
+  "kind": "stat-70",
+  "name": "stat-70",
+  "start": 622.208542,
+  "duration": 6.5005,
+  "variables": {
+   "landAt": 74,
+   "comparison": ""
+  }
+ },
+ {
+  "kind": "board-g",
+  "name": "board-g",
+  "start": 630.75075,
+  "duration": 25.666333,
+  "variables": {}
+ },
+ {
+  "type": "video",
+  "name": "final-design.mp4",
+  "src": "assets/media/final-design.mp4",
+  "start": 656.417083,
+  "duration": 1.5319169999999076,
+  "mediaStart": 0
+ },
+ {
+  "kind": "before-after",
+  "name": "before-after",
+  "start": 657.949,
+  "duration": 3.17612500000007,
+  "variables": {
+   "bakeComparison": true
+  }
+ }
+]
