@@ -73,21 +73,29 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def append_jsonl(path: Path, record: dict) -> None:
-    """Append one JSON object as one line, under an exclusive lock. Never rewrites."""
+def append_jsonl(path: Path, record: dict, *, track: bool = False, by: str | None = None) -> None:
+    """Append one JSON object as one line, under an exclusive lock. Never rewrites.
+
+    track=True is for a ledger AEM stands behind: the line's hash goes into the file's integrity manifest in
+    the same locked write (see integrity.py), so a line written any other way shows up in `aem integrity`."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(record, ensure_ascii=False) + "\n"
+    line = json.dumps(record, ensure_ascii=False)
     with open(path, "a", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
+            if track:
+                from . import integrity
+                integrity.ensure_baseline(path)
             # If the file does not end in a newline (hand edit), start on a fresh line.
             if f.tell() > 0:
                 with open(path, "rb") as r:
                     r.seek(-1, os.SEEK_END)
                     if r.read(1) != b"\n":
                         f.write("\n")
-            f.write(line)
+            f.write(line + "\n")
             f.flush()
+            if track:
+                integrity.note_append(path, line, by=by)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 

@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from . import ledger, operator
+from . import integrity, ledger, operator
 from .registry import Context, load_registry
 from .util import AemError, REPO_ROOT, expand, sha256_text, today, ts, write_json_atomic
 
@@ -21,6 +21,18 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
     quote = quote.rstrip("\n")
     if not quote.strip():
         raise AemError("no quote on standard input", hint="Paste the client's exact words, then end input.")
+    auth = operator.current_authority()
+    if auth is not None:
+        # On the operator's message the client's words must be in that message: they stay the client's words,
+        # pasted by the operator, never the agent's reading of them.
+        if quote not in auth.prompt_text:
+            quote = quote.strip()
+        if quote not in auth.prompt_text:
+            first = (ctx.client.contact.split() or [ctx.client.id])[0]
+            raise AemError(f"paste {first}'s exact words in your message",
+                           hint=f"On the operator's message, the quote must appear verbatim in that message. "
+                                f"Ask the operator to paste {ctx.client.contact}'s words into the chat, then quote them exactly.",
+                           data={"quote_not_in_prompt": True})
     scopes = ctx.client.raw.get("decision_scopes", SCOPES)
     if scope not in scopes:
         raise AemError(f"scope must be one of {', '.join(scopes)}")
@@ -40,7 +52,8 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
         *quoted, "",
         "| Scope | Source | Entered |",
         "|---|---|---|",
-        f"| {scope_text} | {source} | entered by {ctx.client.operator} with `aem client-said`, {when} |",
+        f"| {scope_text} | {source} | entered by {ctx.client.operator} with `aem client-said`"
+        + (f" on their chat message ({auth.prompt_id})" if auth is not None else "") + f", {when} |",
         "",
         "Our reading: not yet written. Quote copied verbatim from what was pasted.",
     ]
@@ -58,6 +71,7 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
         at = len(lines)
         placed = "at the end"
     new_lines = lines[:at] + block + lines[at:]
+    integrity.ensure_baseline(path)  # on AEM's first write the text already there is the baseline
     tmp = path.with_suffix(path.suffix + ".aem-tmp")
     tmp.write_text("\n".join(new_lines), encoding="utf-8")
     tmp.replace(path)
@@ -65,6 +79,7 @@ def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str 
     back = path.read_text(encoding="utf-8").split("\n")
     if back[at:at + len(block)] != block or back[:at] + back[at + len(block):] != lines:
         raise AemError(f"{path} did not read back as written; check it by hand")
+    integrity.note_insert(path, original, at, block, by="aem client-said")
     ledger.record(ctx, "client_said", note=f"{scope} · {source}", fill_stage=True,
                   quote_sha256=sha256_text(quote), decisions_file=str(path), source="aem client-said")
     return {"ok": True, "file": str(path), "placed": placed, "heading": heading, "scope": scope,

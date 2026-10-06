@@ -38,7 +38,15 @@ def record(ctx: Context, event: str, *, gate=None, scene=None, note=None, at: st
     for k, v in extra.items():
         if v is not None:
             rec[k] = v
-    append_jsonl(ctx.events_path, rec)
+    # A record written on the operator's message says so: via "chat", the prompt's id and an excerpt of it.
+    auth = operator.current_authority()
+    if auth is not None:
+        if event not in ("operator_prompt", "operator_turn"):
+            from . import authority
+            authority.ensure_prompt_event(ctx, auth)
+        for k, v in operator.provenance().items():
+            rec.setdefault(k, v)
+    append_jsonl(ctx.events_path, rec, track=True, by=extra.get("source"))
     return rec
 
 

@@ -9,6 +9,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { EMPTY_LEDGER, EMPTY_VIEW } from './aem'
 import type { Io } from './aem'
+import { EMPTY_AUTHORITY, authorityAfterTool, authorityDropped, authorityPrompt, authorityStart, authorityTurnComplete, authorityTurnStart, closeAuthority } from './authority'
 import { CONTEXT_COMMANDS, contextCommand, contextCompose, contextStart, contextTick } from './context'
 import { GUARD_COMMANDS, guardCall, guardCommand } from './guard'
 import { EMPTY_INBOX, INBOX_COMMANDS, INBOX_PANE, cancelReason, drawInbox, inboxCommand, inboxOn, loadInbox, pressAction, submitReason } from './inbox'
@@ -29,6 +30,7 @@ const view = atom({ plugin: 'aavkar-educational-motion-studio', key: 'view' } as
 const ledger = atom({ plugin: 'aavkar-educational-motion-studio', key: 'ledger' } as const, EMPTY_LEDGER)
 const inbox = atom({ plugin: 'aavkar-educational-motion-studio', key: 'inbox' } as const, EMPTY_INBOX)
 const pin = atom({ plugin: 'aavkar-educational-motion-studio', key: 'pin' } as const, null as string | null)
+const authority = atom({ plugin: 'aavkar-educational-motion-studio', key: 'authority' } as const, EMPTY_AUTHORITY)
 
 const TICK_MS = 30_000
 
@@ -66,6 +68,13 @@ function io($: EngineInterface): Io {
     openPane: async (id, title) => {
       await $.ui.open({ id, title })
     },
+    setTurnEnv: async nonce => {
+      await $.env.set('AEM_OPERATOR_TURN', nonce)
+    },
+    getAuthority: () => read($, authority),
+    patchAuthority: async fn => {
+      await update($, authority, fn)
+    },
   }
 }
 
@@ -75,6 +84,7 @@ export const register: Register = (on, options) => {
     const x = io($)
     const commands = [...CONTEXT_COMMANDS, ...LEDGER_COMMANDS, ...GUARD_COMMANDS, ...(inboxOn(options) ? INBOX_COMMANDS : [])]
     for (const c of commands) await x.registerCommand(c)
+    await authorityStart(x)
     await contextStart(x, options)
     await ledgerStart(x, options)
     let tick = 0
@@ -90,7 +100,9 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
-    await ledgerEnd(io($), options, e)
+    const x = io($)
+    await closeAuthority(x, options)
+    await ledgerEnd(x, options, e)
     return next(e)
   })
 
@@ -100,17 +112,25 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    await ledgerPrompt(io($), options, e.origin)
-    return next(e)
+    const x = io($)
+    await ledgerPrompt(x, options, e.origin)
+    await authorityPrompt(x, options, e)
+    const entered = await next(e)
+    if (entered.drop !== undefined) await authorityDropped(x)
+    return entered
   })
 
   on('turn.start', async ($, e, next) => {
-    await ledgerTurnStart(io($), options, e.turnId)
+    const x = io($)
+    await authorityTurnStart(x, options, e.turnId, e.text)
+    await ledgerTurnStart(x, options, e.turnId)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    await ledgerTurnComplete(io($), options, e)
+    const x = io($)
+    await ledgerTurnComplete(x, options, e)
+    await authorityTurnComplete(x, options, e)
     return next(e)
   })
 
@@ -123,6 +143,7 @@ export const register: Register = (on, options) => {
     const ran = await next(e)
     await ledgerToolDone(x, options, String(e.tool), startedAt, await $.clock.now())
     if ('deny' in ran && ran.deny !== undefined) return ran
+    await authorityAfterTool(x, options, String(e.tool))
     const note = await sentinelAfter(x, options, e as unknown as Record<string, unknown>, watching, ran.isError === true)
     if (note === undefined || ran.isError === true) return ran
     return { ...ran, context: [...(ran.context ?? []), note] }

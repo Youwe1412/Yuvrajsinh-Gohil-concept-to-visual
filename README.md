@@ -22,6 +22,13 @@ Nothing about a client is in the code. Names, paths, protected files, blocked co
 render scripts and idle time come from `registry/clients.json`. The first client is Joel Belton's
 MergeToMaster.
 
+## The first principle
+
+AEM allows whatever the operator asks for in chat. Its guard and its operator-only commands exist only to
+stop the agent acting on its own authority: when the operator's own message started a turn, the decision
+is the operator's, and AEM records it (word for word, with every action taken on it) and never blocks it.
+A turn the operator did not start (a loop, a schedule, a background task) gets the full checks.
+
 ## What AEM is not
 
 These are **recorded checks inside Claude Code (and Codex, once its hooks are set up), not

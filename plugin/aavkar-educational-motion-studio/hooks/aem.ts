@@ -1,11 +1,11 @@
 // Calls the aem CLI. Every decision AEM makes is the CLI's; this file only runs it.
 import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } from 'claude-code'
 
-import type { AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
+import type { AemAuthority, AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
 import { sha256Hex } from './sha256'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
-export const PLUGIN_VERSION = '0.8.0'
+export const PLUGIN_VERSION = '0.9.0'
 
 export type Json = { [key: string]: unknown }
 
@@ -18,13 +18,16 @@ export type AemResult = {
 export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean; env?: Record<string, string> }
 
 // The aem commands only the operator runs. The CLI refuses them unless the operator is shown to be running
-// them (cli/aem/operator.py); this plugin is how a slash command shows it: a one-time nonce.
-const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['use', 'stage', 'approve', 'reject', 'client-said', 'allow', 'new-client'])
+// them (cli/aem/operator.py); this plugin is how a slash command shows it: a one-time nonce. `authority open`
+// and `close` are the plugin's own, and the CLI takes them only on that nonce, never on a turn authority.
+const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['use', 'stage', 'approve', 'reject', 'client-said', 'allow', 'new-client', 'accept-edit'])
 
 export function isOperatorCommand(args: readonly string[]): boolean {
   const [cmd, action] = args
   if (cmd === undefined) return false
-  return OPERATOR_COMMANDS.has(cmd) || (cmd === 'inbox' && (action === 'accept' || action === 'dismiss'))
+  return OPERATOR_COMMANDS.has(cmd) ||
+    (cmd === 'inbox' && (action === 'accept' || action === 'dismiss')) ||
+    (cmd === 'authority' && (action === 'open' || action === 'close'))
 }
 
 export const NONCE_TTL_MS = 60_000
@@ -177,6 +180,7 @@ export function statusLine(v: AemView, nowMs: number): string {
     bits.push('no gate')
   }
   if (p.stale > 0) bits.push(`${p.stale} stale`)
+  if ((p.integrity ?? 0) > 0) bits.push(`${p.integrity} ledger edit${p.integrity === 1 ? '' : 's'} to review`)
   return bits.join(' · ')
 }
 
@@ -207,6 +211,11 @@ export type Io = {
   getInbox: () => Promise<AemInbox>
   patchInbox: (fn: (b: AemInbox) => AemInbox) => Promise<void>
   openPane: (id: string, title: string) => Promise<void>
+  // AEM_OPERATOR_TURN in this process's environment, which every Bash call (and every aem call) after
+  // inherits; undefined unsets it.
+  setTurnEnv: (nonce: string | undefined) => Promise<void>
+  getAuthority: () => Promise<AemAuthority>
+  patchAuthority: (fn: (a: AemAuthority) => AemAuthority) => Promise<void>
 }
 
 // The session pin reaches every aem call as AEM_PROJECT (with AEM_PROJECT_SOURCE saying it is a pin), so the

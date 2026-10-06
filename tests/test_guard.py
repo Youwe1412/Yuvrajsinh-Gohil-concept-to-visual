@@ -95,7 +95,10 @@ class Guard(WorldCase):
         d = self.assertDenied("AEM-G05", "Bash", command=cmd)
         self.assertTrue(d["stale"])
         self.assertDenied("AEM-G05", "Bash", command=f"cp '{r}' '/tmp/Animations Done/x.mp4' # deliver")
-        self.assertDenied("AEM-G05", "Bash", command="python3 place.py --out out/placement.fcpxml")  # names no render
+        # 0.9.0: naming an .fcpxml and no render is not G05's business (it denied reads and the shared fcp-edit
+        # tools); with no render named there is nothing to check. A placement that reads its renders from a
+        # manifest is a documented limit.
+        self.assertAllowed("Bash", command="python3 place.py --out out/placement.fcpxml")
         self.assertAllowed("Bash", command="grep -r placement docs/")
 
     def test_fcpxml_write_checks_media(self):

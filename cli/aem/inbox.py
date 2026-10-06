@@ -84,7 +84,10 @@ def append_case(ctx: Context, *, item_kind: str, item: str, ruling: str | None, 
     if inbox_ref:
         case["inbox_ref"] = inbox_ref
     case.update(extra or {})
-    append_jsonl(ctx.client.labelled_cases_path, case)
+    prov = operator.provenance()
+    if prov:
+        case.update(via=prov["via"], prompt_id=prov["prompt_id"])
+    append_jsonl(ctx.client.labelled_cases_path, case, track=True, by="aem inbox")
     ledger.record(ctx, "labelled_case", scene=item, gate=gate, note=case["case_id"], fill_stage=False,
                   case_id=case["case_id"], item_kind=item_kind, ruling=ruling, inbox_ref=inbox_ref, source="aem inbox")
     return case

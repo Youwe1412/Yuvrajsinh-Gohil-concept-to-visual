@@ -178,11 +178,11 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
             "gate": gate, "scene": item, "render": None, "render_sha256": None, "source_revision": None,
             "approver": ctx.client.operator, "date": today(), "type": "approval", "ts": ts(),
             "item_kind": "plan_row", "plan_file": rel_to(p, ctx.project_dir), "plan_row": r["text"],
-            "plan_row_sha256": r["sha256"],
+            "plan_row_sha256": r["sha256"], **operator.provenance(),
         }
         if note:
             rec["note"] = note
-        append_jsonl(ctx.approvals_path, rec)
+        append_jsonl(ctx.approvals_path, rec, track=True, by="aem approve")
         ledger.record(ctx, "approval", gate=gate, scene=item, note=note, fill_stage=False, item_kind="plan_row",
                       plan_file=rec["plan_file"], plan_row_sha256=r["sha256"], source="aem approve")
         return rec
@@ -194,12 +194,13 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
         "source_revision": rev, "approver": ctx.client.operator, "date": today(),
         "type": "approval", "ts": ts(), "source_revision_from": rev_how,
         "render_check": last_render_check(ctx, sha) if ik == "render" else "not a render",
+        **operator.provenance(),
     }
     if ik != "render":
         rec["item_kind"] = ik
     if note:
         rec["note"] = note
-    append_jsonl(ctx.approvals_path, rec)
+    append_jsonl(ctx.approvals_path, rec, track=True, by="aem approve")
     ledger.record(ctx, "approval", gate=gate, scene=item, note=note, fill_stage=False,
                   render=rec["render"], render_sha256=sha, item_kind=rec.get("item_kind"), source="aem approve")
     return rec
@@ -231,8 +232,9 @@ def reject(ctx: Context, item: str, reason: str, *, gate=None, path: str | None 
         "scene": item, "render": render, "render_sha256": sha, "source_revision": None,
         "approver": ctx.client.operator, "date": today(), "type": "rejection", "ts": ts(),
         "reason": reason.strip(), **({"item_kind": ik} if ik != "render" else {}), **extra,
+        **operator.provenance(),
     }
-    append_jsonl(ctx.approvals_path, rec)
+    append_jsonl(ctx.approvals_path, rec, track=True, by="aem reject")
     ledger.record(ctx, "rejection", gate=rec["gate"], scene=item, note=reason.strip(), fill_stage=False,
                   render=render, render_sha256=sha, item_kind=rec.get("item_kind"), source="aem reject")
     return rec
@@ -283,7 +285,7 @@ def mark_stale(ctx: Context, item: str, new_sha: str, render_rel: str, reason: s
             "date": today(), "type": "stale", "ts": ts(),
             "superseded_by_sha256": new_sha, "superseded_by_render": render_rel, "reason": reason,
         }
-        append_jsonl(ctx.approvals_path, rec)
+        append_jsonl(ctx.approvals_path, rec, track=True, by="aem check-render")
         marked.append(rec)
         done.add(sha)
     return marked

@@ -152,7 +152,7 @@ changed during the run.
 aem drift --client joel
 ```
 
-Start Claude Code in a registered project's folder: you should get one toast, `AEM 0.8.0 ·
+Start Claude Code in a registered project's folder: you should get one toast, `AEM 0.9.0 ·
 <client>/<project> · resolved from folder`, and the status line shows `AEM · <client> · <project> · …`.
 No toast means the plugin is not loaded in that session. `/aem status` answers either way once it is.
 
@@ -162,7 +162,8 @@ Pull the repository; the command updates at once (it is a link). **The plugin do
 0.8.0 the two must match: the CLI refuses operator commands (`/stage`, `/approve`, the plugin's own
 automatic ledger events, ...) unless the plugin gives them a one-time nonce, which only 0.8.0 and later
 does. An older plugin therefore has its slash commands and ledger events refused (the toast and the
-command's reply say "operator's command … no operator nonce"). Update it, then start new sessions:
+command's reply say "operator's command … no operator nonce"), and before 0.9.0 it opens no turn
+authority, so the agent cannot act on what you ask in chat. Update it, then start new sessions:
 
 ```bash
 claude plugin marketplace update aavkar-productions
@@ -172,7 +173,7 @@ claude plugin marketplace update aavkar-productions
 claude plugin update aavkar-educational-motion-studio@aavkar-productions
 ```
 
-`claude plugin list` should then say version 0.8.0. Remove the plugin with `/plugin uninstall
+`claude plugin list` should then say version 0.9.0. Remove the plugin with `/plugin uninstall
 aavkar-educational-motion-studio@aavkar-productions`, the command by deleting the
 `~/.local/bin/aem` link, and the Codex hooks by deleting AEM's `[hooks]` entries. AEM's ledgers live
 in the projects and stay.

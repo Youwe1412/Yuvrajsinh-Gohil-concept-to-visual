@@ -7,6 +7,7 @@ export type AemStatusParts = {
   paused: boolean
   waiting: string | null
   stale: number
+  integrity?: number
 }
 
 // How aem resolved the project: env, session pin, folder, folder (design system), flag or none.
@@ -58,8 +59,22 @@ export type AemInbox = {
   busy: boolean
 }
 
+// The operator's authority for the running turn (0.9.0). The nonce itself is never kept here: it goes from
+// `aem authority open` straight into AEM_OPERATOR_TURN. `pending` holds operator prompts waiting for their
+// turn to start: one typed while the session was idle, or one typed during a turn that may start the next.
+export type AemPendingPrompt = { text: string; origin: string; idle: boolean; promptId: string | null }
+
+export type AemAuthority = {
+  active: boolean
+  promptId: string | null
+  turnId: string | null
+  excerpt: string | null
+  usesSeen: number
+  pending: AemPendingPrompt[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger; inbox: AemInbox; pin: string | null }
+    'aavkar-educational-motion-studio': { view: AemView; ledger: AemLedger; inbox: AemInbox; pin: string | null; authority: AemAuthority }
   }
 }

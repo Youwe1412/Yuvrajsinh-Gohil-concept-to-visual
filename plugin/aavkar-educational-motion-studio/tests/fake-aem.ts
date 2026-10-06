@@ -17,14 +17,23 @@ export type World = {
   toolsRun: string[]
   commands: string[]
   panes: string[]
+  // AEM_OPERATOR_TURN as the plugin set it in the process environment, and every set in order
+  turnEnv: string | undefined
+  envSets: { name: string; value: string | undefined }[]
+  turnEnvAtTool: (string | undefined)[]
 }
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
 export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string; env?: Record<string, string>; failWrite?: boolean } = {}): World {
-  const w: World = { calls: [], stdins: [], envs: [], files: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
+  const w: World = { calls: [], stdins: [], envs: [], files: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [], turnEnv: undefined, envSets: [], turnEnvAtTool: [] }
   mock.env(on, { HOME: '/Users/test', ...opts.env })
   mock.store(on)
+  on('env.set', ($, e) => {
+    w.envSets.push({ name: e.name, value: e.value })
+    if (e.name === 'AEM_OPERATOR_TURN') w.turnEnv = e.value
+    return { value: undefined }
+  })
   on('process.run', ($, e) => {
     w.calls.push([...e.argv])
     w.stdins.push(e.init?.stdin)
@@ -66,6 +75,7 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
   on('session.cwd', () => ({ value: '/projects/P1' }))
   on('tool.call', async ($, e) => {
     w.toolsRun.push(String(e.tool))
+    w.turnEnvAtTool.push(w.turnEnv)
     const ms = opts.toolMs?.[String(e.tool)] ?? 0
     if (ms > 0) await w.clock.advance(ms)
     return { result: 'done' }

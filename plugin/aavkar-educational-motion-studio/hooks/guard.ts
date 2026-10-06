@@ -1,6 +1,6 @@
 // Feature "guard": every file and shell tool call is put to `aem guard`, which decides; a
 // denial tells the agent why and how the operator can approve or override. Commands only the
-// operator can type: /approve, /reject, /client-said, /allow.
+// operator can type: /approve, /reject, /client-said, /allow, /accept-edit.
 import type { CommandRunInput, CommandRunResult, PluginOptions } from 'claude-code'
 
 import { cli, errorOf, isOperator, leading, refresh, refusedText } from './aem'
@@ -14,11 +14,16 @@ export const GUARD_COMMANDS: readonly CommandSpecLite[] = [
   { name: 'reject', description: 'AEM: reject an item, with a reason', argumentHint: '<item> <reason>' },
   { name: 'client-said', description: "AEM: record the client's exact words in their decisions file", argumentHint: '<channel|video|instance> [--source S] [--item SHOT] <their words, or select them first>' },
   { name: 'allow', description: 'AEM: let one blocked call through (add --standing to keep it)', argumentHint: '<rule-or-command> <reason> [--standing]' },
+  { name: 'accept-edit', description: 'AEM: accept the ledger edits `aem integrity` found (all, or one file), with a reason', argumentHint: '[--file NAME] <reason>' },
 ]
 
 export type GuardVerdict = { deny: string } | { allowNote?: string }
 
-type Decision = { decision?: string; rule?: string; rule_name?: string; reason?: string; how?: string; allow_id?: string; once?: boolean; overridden?: { rule?: string } }
+type Decision = {
+  decision?: string; rule?: string; rule_name?: string; reason?: string; how?: string; allow_id?: string; once?: boolean
+  overridden?: { rule?: string }
+  allowed_by_operator_prompt?: { rule?: string; rule_name?: string; prompt_id?: string; prompt_excerpt?: string }
+}
 
 export async function guardCall(io: Io, options: PluginOptions, tool: string, args: Record<string, unknown>): Promise<GuardVerdict> {
   if (!GUARDED_TOOLS.has(tool)) return {}
@@ -37,6 +42,13 @@ export async function guardCall(io: Io, options: PluginOptions, tool: string, ar
       'Do not try another route to the same effect; tell the operator what was denied.'
     io.toast(`AEM denied ${tool}: ${d.rule} ${d.rule_name}`, 8000)
     return { deny: msg }
+  }
+  if (d.decision === 'allow' && d.allowed_by_operator_prompt) {
+    // The operator's message started this turn: AEM records what it would have denied and lets it through.
+    const o = d.allowed_by_operator_prompt
+    const note = `AEM allowed ${tool} on your message (${o.rule} ${o.rule_name ?? ''} would have denied it): '${o.prompt_excerpt ?? ''}'`
+    io.toast(note, 8000)
+    return { allowNote: note }
   }
   if (d.decision === 'allow' && d.allow_id) {
     const note = `AEM: ${d.once ? 'one-time' : 'standing'} /allow ${d.allow_id} let a ${d.overridden?.rule ?? ''} call through`
@@ -99,6 +111,12 @@ export async function guardCommand(io: Io, options: PluginOptions, e: CommandRun
     }
     if (!target || !reason) return { text: 'Usage: /allow <rule-or-command> <reason> [--standing]' }
     return run(io, options, ['allow', target, '--reason', reason, ...(standing ? [] : ['--once'])])
+  }
+  if (e.command === 'accept-edit') {
+    const a = leading(e.args, { words: 0, valueFlags: ['file'] })
+    const file = typeof a.flags.file === 'string' ? ['--file', a.flags.file] : []
+    const reason = a.rest.trim()
+    return run(io, options, ['accept-edit', ...file, ...(reason ? ['--reason', reason] : [])])
   }
   return { text: `unknown command ${e.command}` }
 }

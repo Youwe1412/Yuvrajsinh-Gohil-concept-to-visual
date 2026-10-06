@@ -6,8 +6,9 @@ not do, and where it stands today. The other docs go deeper: [INSTALL.md](INSTAL
 [OPERATOR.md](OPERATOR.md) (daily use), [CLI.md](CLI.md) (every command, format and limit).
 
 Written 6 October 2026 at commit `275e0bc` (plugin 0.7.0), and updated the same day for the 0.8.0
-redesign (§12): there is no global active project, and the CLI refuses operator-only commands itself.
-Sections 3, 4, 5, 9 and 11 describe 0.8.0; §12 says what changed and why.
+redesign (§12): there is no global active project, and the CLI refuses operator-only commands itself;
+and again for 0.9.0 (§13): **AEM allows whatever the operator asks for in chat**, and ledger integrity.
+Sections 3, 4, 5, 9 and 11 describe 0.9.0; §12 and §13 say what changed and why.
 
 ---
 
@@ -81,7 +82,9 @@ Installed by `cli/install.sh` as a link at `~/.local/bin/aem`. Every command tak
 | Module | Holds |
 |---|---|
 | `registry.py` | Reads the registry; resolves the project for every call (`AEM_PROJECT`, the plugin's session pin, the working folder); refuses temporary or out-of-registry folders; the last-used hint |
-| `operator.py` | The check at the entry of every operator-only command: a real terminal with no agent markers, or the plugin's one-time nonce |
+| `operator.py` | The check at the entry of every operator-only command: a real terminal with no agent markers, the plugin's one-time nonce, or the operator's message (a turn authority) |
+| `authority.py` | `authority open/close/uses`: the turn authority an operator's prompt opens, and its `operator_prompt` record |
+| `integrity.py` | `integrity`, `accept-edit`: the manifest of every ledger line AEM wrote, and what differs from it |
 | `fps.py` | Frame rates as exact rationals (24000/1001, never 23.976); discovery from `aem.project.json`, FCPXML, `data/words.json`, `frame.md`; refuses conflicts; timecode incl. drop-frame |
 | `ledger.py` | `events.jsonl`: stages, waits, pauses, automatic events, the time report |
 | `approvals.py` | `approvals.jsonl`: approve, reject, stale marks, the approval check; item kinds (render, still, plan row) |
@@ -100,9 +103,9 @@ The commands, grouped by who runs them:
 
 | Who | Commands |
 |---|---|
-| **Operator only** (the CLI refuses them unless you are running them, §12) | `use` (and `use --clear`), `stage` (including the plugin's automatic `stage auto`), `approve`, `reject`, `client-said`, `allow`, `new-client`, `inbox accept`, `inbox dismiss` |
+| **Operator only** (the CLI refuses them unless you are running them or asked for them in chat, §12, §13) | `use` (and `use --clear`), `stage` (including the plugin's automatic `stage auto`), `approve`, `reject`, `client-said`, `allow`, `new-client`, `accept-edit`, `inbox accept`, `inbox dismiss`; the plugin's own `authority open`/`close` |
 | **Plugin / Codex run them** | `guard`, `rendered`, `codex-hook` (open: they only judge or check) |
-| **Anyone, read-mostly** | `status`, `context`, `report`, `check-render`, `check-approval`, `import-review` (writes drafts only), `inbox` (list), `drift`, `codex-config` |
+| **Anyone, read-mostly** | `status`, `context`, `report`, `check-render`, `check-approval`, `import-review` (writes drafts only), `inbox` (list), `drift`, `integrity`, `authority uses`, `codex-config` |
 
 ### 3.2 The registry (`registry/`)
 
@@ -373,8 +376,8 @@ Not done yet:
   folder this session used) is yours to do, per INSTALL.md. **The installed plugin is still 0.7.0 until
   you update it, and the CLI you are running is already 0.8.0**: until you update the plugin, its slash
   commands and automatic ledger events are refused by the CLI (INSTALL.md, "Updating").
-- Phases 3 and later of the 0.8.0 redesign are not done: the guard's G01/G02 text matching is as
-  limited as §9 says, and there is no ledger integrity check yet.
+- The guard's G01/G02 text matching is as limited as §9 says (0.9.0 fixed the `~/…;` tokenizer bug and
+  G05 on reads, nothing more). The ledger integrity check is built (§13).
 - P2 is registered (`joel/P2`, `P2 - Claude Code`, 25/1 from `RoughCut.mp4`, 3840 × 2160); it has no
   HyperFrames project yet.
 
@@ -400,7 +403,7 @@ Codex's shell can open `/dev/tty`; but a pseudo-terminal the agent's own shell a
 Python's `pty`) passes a bare terminal test, so the check also requires that none of the markers an
 agent host sets (`CLAUDECODE`, `CODEX_CI`, ...) is in the environment. That is cooperative: an agent
 that strips them, or writes a nonce hash file with a shell command, passes. The ledgers' append-only
-hashes, and Phase 4's integrity check, are what show it afterwards.
+hashes, and the integrity check (§13), are what show it afterwards.
 
 Two bugs found on the way, both fixed with tests: the longest-match folder lookup compared the wrong
 tuple field, and the plugin's idle tick could record `idle_start` twice when `aem` was slow.
@@ -408,3 +411,31 @@ tuple field, and the plugin's idle tick could record `idle_start` twice when `ae
 Compatibility: the skill's `events.jsonl`, `approvals.jsonl` and labelled-cases formats are unchanged
 (no field was added or removed). Removed: `aem use --path` and `--fps`, the `AEM-G04` rule, and the
 stored `registry`/`fps` fields in `active.json`.
+
+---
+
+## 13. What 0.9.0 changed, and why (6 October 2026)
+
+**A new first principle, replacing guard modes: AEM allows whatever the operator asks for in chat.** The
+guard and the operator-only commands exist only to stop the agent acting on its own authority. When the
+operator has asked, the decision is theirs; AEM records it and never blocks it. The P2 session that day
+showed the cost of the old rule: Yuvraj asked for things in plain words and had to retype them as slash
+commands, and the guard denied reads of an FCPXML and the shared `~/Tools/fcp-edit-workflow`.
+
+| Part | What it does |
+|---|---|
+| Turn authority (`authority.py`, plugin `authority.ts`) | On a prompt from an operator origin (composer, bridge, SDK; never a plugin, peer, schedule, notification or the agent) the plugin runs `aem authority open`: a random nonce whose SHA-256 goes to `~/.aem/nonces/` with the prompt's exact text, session and turn, expiring at the turn's end or after 60 minutes, whichever is first; and an `operator_prompt` event with the exact text, its SHA-256, session, turn and time. The nonce is set as `AEM_OPERATOR_TURN` in the plugin's process environment (`$.env.set`), which every `Bash` call inherits. `turn.complete` closes it. |
+| Guard | On a valid authority it never denies: what it would have denied is allowed and logged as `allowed_by_operator_prompt` (rule, tool, call, prompt id), with a toast. Without one, unchanged. |
+| Operator commands | Accepted on the authority (path (c) in `operator.py`), each record carrying `via: "chat"`, `prompt_id`, `prompt_excerpt`; each one toasted (`approve x via chat: '<excerpt>'`). `authority open`/`close` are never accepted on it. |
+| `client-said` from chat | The quote must appear verbatim in the authorising prompt, or: "paste Joel's exact words in your message". Joel's words stay his. |
+| Ledger integrity (`integrity.py`) | A manifest of every line AEM writes to `events.jsonl`, `approvals.jsonl`, the decisions file and the labelled cases; `aem integrity` reports inserted, edited and removed lines and whether an operator's prompt let the write through; `aem accept-edit` (operator only) accepts them, recorded. |
+| Friction from P2 | AEM-G05 never fires on reads (`cat`, `grep`, `unzip`, `xmllint`, `ffprobe`, inline parsing code) and no longer denies a command that names an `.fcpxml` but no render. Shell words are split as a shell splits them, so `~/Tools/fcp-edit-workflow;` is the folder and a `;`. An XPath (`//asset`) is not a path. These work with and without an authority, because a turn may be autonomous. |
+| Skill | `mergetomaster-studio`: run operator commands only when Yuvraj's latest message asks for that action; say what was recorded after each; never treat earlier messages as standing permission. Zip rebuilt, skill reinstalled, no drift. |
+
+Limits, plainly: the authority is the turn's, not the command's (AEM cannot tell whether the message
+really asked for a given action; the record lets the operator check); the CLI does not verify that the
+process holding the nonce belongs to that session; during an operator turn the agent could write a nonce
+file or a ledger by hand, which is logged and flagged but not stopped; an agent that writes a nonce file in
+an autonomous turn forges an authority, as it could forge a one-time nonce before; the integrity manifest
+sits beside the ledger; Codex has no turn authority. CLI.md, "Operator authority from chat" and "Ledger
+integrity", has the detail.

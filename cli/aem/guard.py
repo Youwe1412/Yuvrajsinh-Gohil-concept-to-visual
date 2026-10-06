@@ -15,6 +15,11 @@ Rules
   AEM-G03  a command the client's registry entry blocks
   AEM-G05  a placement, FCPXML or delivery step names a render without a standing approval
 
+With a turn authority (the operator's own message started this turn, see authority.py) the guard never denies:
+a call that would have been denied is allowed and logged as `allowed_by_operator_prompt`, naming the rule it
+would have hit and the prompt. Without one (an autonomous, looped or scheduled turn, or any turn an operator
+prompt did not start) every rule applies unchanged.
+
 There is no AEM-G04 any more (the number is not reused). The operator-only aem commands (approve,
 reject, stage, ...) are refused by the CLI itself, at their entry, whoever spells them and however
 (see operator.py), so the guard no longer reads shell text for them: a commit message, a heredoc or a
@@ -31,7 +36,7 @@ import re
 import shlex
 from pathlib import Path
 
-from . import approvals, clients, ledger, registry
+from . import approvals, clients, integrity, ledger, operator, registry
 from .registry import Context
 from .util import AemError, CheckFailed, aem_home, expand
 
@@ -80,6 +85,8 @@ def protected_paths(ctx: Context) -> list[Path]:
     if ctx.project_dir:
         out += [_real(ctx.project_dir / f) for f in ctx.client.protected["project"]]
     out += [_real(ctx.registry_path)]
+    # Each ledger's integrity manifest is protected like the ledger.
+    out += [_real(integrity.manifest_path(p)) for p in integrity.tracked_files(ctx)]
     return out
 
 
@@ -103,21 +110,173 @@ def allowed_roots(ctx: Context | None, reg: dict) -> list[Path]:
     return roots
 
 
+# Shell control characters that end a word even with no space around them: `ls ~/x;` is the word `~/x` and a `;`.
+_PUNCT = ";&|<>()`"
+_CONTROL = {";", "&", "&&", "||", "|", "|&", ";;", "(", ")", "`", ";&", ";;&"}
+
+
 def _tokens(command: str) -> list[str]:
     try:
-        return shlex.split(command, posix=True)
+        lex = shlex.shlex(command, posix=True, punctuation_chars=_PUNCT)
+        lex.whitespace_split = True
+        lex.commenters = ""
+        return list(lex)
     except ValueError:
         return command.split()
 
 
 def bash_paths(command: str, cwd: str | None) -> list[Path]:
-    """Path-like words in a shell command: absolute, ~, ./ and ../ forms, including after = and :."""
+    """Path-like words in a shell command: absolute, ~, ./ and ../ forms, including after = and :.
+    Words are split the way a shell splits them, so a path followed by `;`, `|`, `&&`, `)` or `>` is the path."""
     out = []
     for tok in _tokens(command):
+        if not tok or set(tok) <= set(_PUNCT + "&"):
+            continue
         for part in re.split(r"[=:]", tok) if not tok.startswith(("/", "~")) else [tok]:
+            if part.startswith("//"):  # an XPath (//asset) or what follows a URL's scheme: not a file
+                continue
             if part.startswith(("/", "~/", "./", "../")) or part == "~":
                 out.append(_real(part, cwd))
     return out
+
+
+def bash_media(command: str, cwd: str | None, exts: list[str]) -> list[Path]:
+    """Renders a command names: path words, bare relative words (renders/x.mp4) and paths inside quoted code."""
+    exts = [e.lower() for e in exts]
+    found = {p for p in bash_paths(command, cwd) if p.suffix.lower() in exts}
+    for tok in _tokens(command):
+        if not tok.startswith(("/", "~", "-")) and Path(tok).suffix.lower() in exts and "://" not in tok:
+            found.add(_real(tok, cwd))
+    found.update(_media_in_text(command, {"media_extensions": exts}, cwd))
+    return sorted(found)
+
+
+# --- reads -----------------------------------------------------------------------------------------
+# AEM-G05 stops a placement or delivery of a render nobody approved. It is not for looking: a command made only
+# of programs that read (cat, grep, unzip, ffprobe, a script that only parses) is never a placement.
+
+READ_ONLY_PROGRAMS = frozenset("""
+cat head tail less more nl tac rev grep egrep fgrep rg ag ls ll file stat wc du df sort uniq cut tr column
+paste join comm diff cmp md5 shasum sha1sum sha256sum cksum base64 strings od xxd hexdump jq xmllint xmlstarlet
+unzip zipinfo zcat ffprobe mediainfo exiftool realpath readlink basename dirname which type command whereis
+date echo printf pwd cd pushd popd true false test [ [[ : set export unset read wait sleep env-free
+""".split())
+READ_ONLY_AEM = frozenset(["status", "context", "check-approval", "check-render", "report", "drift", "import-review",
+                           "integrity", "codex-config"])
+INLINE_CODE_PROGRAMS = frozenset(["python", "python3", "node", "ruby", "perl"])
+CODE_WRITES = re.compile(
+    r"open\([^)]*,\s*['\"][^'\"]*[wax+]|\.write\(|write_text|write_bytes|\bshutil\b|\bsubprocess\b|os\.(?:system|popen|remove|"
+    r"rename|replace|unlink|symlink|link|mkdir|makedirs)|\.save\(|copyfile|\.to_csv|\.dump\(|fs\.(?:write|append|unlink|rename|copy|mkdir)|"
+    r"writeFile|createWriteStream|\bunlink\b|File\.(?:write|open\([^)]*['\"][wa])", re.S)
+ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _heredocs(command: str) -> tuple[str, list[str]]:
+    """The command with heredoc bodies removed, and the bodies."""
+    lines = command.split("\n")
+    kept, bodies, i = [], [], 0
+    while i < len(lines):
+        line = lines[i]
+        kept.append(line)
+        m = re.search(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line)
+        i += 1
+        if m:
+            body = []
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            bodies.append("\n".join(body))
+    return "\n".join(kept), bodies
+
+
+def _writes_redirect(tokens: list[str]) -> bool:
+    for i, t in enumerate(tokens):
+        if t in (">", ">>", ">|", ">&") or (t.endswith((">", ">>")) and t[:-1].isdigit()):
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if t == ">&" and (nxt.isdigit() or nxt == "-"):
+                continue
+            if nxt in ("/dev/null", "/dev/stdout", "/dev/stderr"):
+                continue
+            return True
+    return False
+
+
+def command_reads_only(command: str) -> bool:
+    """True when every program the command runs only reads (by name and flags; a script file is unknown, so not)."""
+    text, bodies = _heredocs(command)
+    code = bodies[:]
+    any_command = False
+    for logical in text.split("\n"):
+        if not logical.strip() or logical.strip().startswith("#"):
+            continue
+        toks = _tokens(logical)
+        if not toks:
+            continue
+        if _writes_redirect(toks):
+            return False
+        simple, groups = [], []
+        for t in toks:
+            if t in _CONTROL:
+                if simple:
+                    groups.append(simple)
+                simple = []
+            else:
+                simple.append(t)
+        if simple:
+            groups.append(simple)
+        for g in groups:
+            words, skip = [], False
+            for w in g:  # input redirections and their targets are not arguments
+                if skip:
+                    skip = False
+                elif w in ("<", "<<", "<<-", "<<<") or (w.endswith(">") and w[:-1].isdigit()):
+                    skip = w != "<<"  # a heredoc's marker word was already consumed with its body
+                    if w == "<<":
+                        skip = True
+                else:
+                    words.append(w)
+            while words and ENV_ASSIGN.match(words[0]):
+                words = words[1:]
+            if not words:
+                continue
+            any_command = True
+            prog = os.path.basename(words[0])
+            args = words[1:]
+            if prog == "aem":
+                if not args or args[0] not in READ_ONLY_AEM:
+                    return False
+            elif prog in INLINE_CODE_PROGRAMS:
+                if "-c" in args or "-e" in args:
+                    flag = "-c" if "-c" in args else "-e"
+                    k = args.index(flag)
+                    code.append(" ".join(args[k + 1:]))
+                elif "-" in args or (not args and bodies):
+                    pass  # code from stdin: the heredoc body
+                elif not args:
+                    return False
+                else:
+                    return False  # a script file: not known to be read-only
+            elif prog == "sed":
+                if any(a.startswith("-i") or a == "--in-place" or re.fullmatch(r"-[a-zA-Z]*i[a-zA-Z]*", a) for a in args):
+                    return False
+            elif prog == "find":
+                if any(a in ("-delete", "-exec", "-execdir", "-ok", "-okdir") or a.startswith("-fprint") for a in args):
+                    return False
+            elif prog in ("sort",):
+                if any(a == "-o" or a.startswith("--output") for a in args):
+                    return False
+            elif prog in ("xmllint", "xmlstarlet"):
+                if any(a in ("--output", "-o") or a.startswith("--output=") or a == "ed" for a in args):
+                    return False
+            elif prog == "awk":
+                if any(a in ("-i", "--in-place") for a in args):
+                    return False
+            elif prog not in READ_ONLY_PROGRAMS:
+                return False
+    if not any_command:
+        return False
+    return not any(CODE_WRITES.search(c) for c in code)
 
 
 def _deny(rule: str, reason: str, how: str, **extra) -> dict:
@@ -152,6 +311,18 @@ def check(tool: str, args: dict, cwd: str | None, *, reg_path: str | None = None
     denial = _decide(ctx, reg, tool, args, cwd)
     if denial is None:
         return {"decision": "allow"}
+    # The operator's own message started this turn: the guard exists to stop the agent acting on its own
+    # authority, and here the operator has asked. Allow, and log what would have been denied.
+    auth, auth_problem = operator.turn_authority()
+    if auth is not None:
+        operator.set_authority(auth)
+        if ctx and ctx.project_dir:
+            ledger.record(ctx, "allowed_by_operator_prompt", note=denial["reason"][:500], rule=denial["rule"],
+                          rule_name=denial["rule_name"], tool=tool, subject=subject[:500], prompt_id=auth.prompt_id,
+                          prompt_excerpt=auth.excerpt, source="aem guard")
+        return {"decision": "allow", "allowed_by_operator_prompt": {
+            "rule": denial["rule"], "rule_name": denial["rule_name"], "reason": denial["reason"],
+            "prompt_id": auth.prompt_id, "prompt_excerpt": auth.excerpt, "logged": bool(ctx and ctx.project_dir)}}
     override = _allow_for(ctx, denial, subject)
     if override:
         if override["once"]:
@@ -180,7 +351,7 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
 
     if tool in WRITE_TOOLS:
         target = _real(str(args.get(WRITE_TOOLS[tool]) or ""), cwd)
-        if target in protected:
+        if target in protected or integrity.MANIFEST_DIR in target.parts:
             return _deny("AEM-G01", f"{target} is protected: only the operator's commands write it.",
                          "Ask the operator to run the matching command (/stage, /approve, /reject, /client-said), "
                          "or to type /allow AEM-G01 <reason> for a one-time exception.", path=str(target))
@@ -188,7 +359,7 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
             return _out_of_scope(ctx, target, "write")
         if target.suffix.lower() in gates["write_extensions"]:
             return _gate_media(ctx, _media_in_text(str(args.get("content") or args.get("new_string") or ""), gates, cwd),
-                               f"writing {target.name}", gates, require=False)
+                               f"writing {target.name}", gates)
         return None
 
     if tool in READ_TOOLS:
@@ -206,13 +377,14 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
                 return _deny("AEM-G03", f"`{blocked}` is blocked for {ctx.client.name} in the AEM registry.",
                              f"The operator can type /allow \"{blocked}\" <reason> for one run.", blocked=blocked)
         mentioned = set(bash_paths(command, cwd))
-        names = {p.name for p in protected} | {p.relative_to(_real(ctx.client.design_system)).as_posix()
-                                                for p in protected if _under(p, [_real(ctx.client.design_system)])}
+        names = ({p.name for p in protected} | {p.relative_to(_real(ctx.client.design_system)).as_posix()
+                                                 for p in protected if _under(p, [_real(ctx.client.design_system)])}
+                 | {integrity.MANIFEST_DIR})
+        names -= {p.name for p in protected if integrity.MANIFEST_DIR in p.parts}  # their folder name covers them
         hit = [p for p in protected if p in mentioned]
-        words = set(_tokens(command))
         # Names are searched in the raw text too, so a path inside a quoted script is still seen.
         hit += [Path(n) for n in names if re.search(r"(?:^|[^\w.-])" + re.escape(n) + r"(?:$|[^\w.-])", command)]
-        if hit and not re.match(r"^\s*aem\s+(status|context|check-render|check-approval|drift|report|import-review)\b", command):
+        if hit and not re.match(r"^\s*aem\s+(status|context|check-render|check-approval|drift|report|import-review|integrity|accept-edit)\b", command):
             return _deny("AEM-G01", f"this command names a protected file ({hit[0].name}). The agent does not write "
                                     "AEM ledgers or the client's records, and reads them with the Read tool.",
                          "Use the Read tool to read it. To change it, ask the operator to run the matching command, "
@@ -220,10 +392,8 @@ def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | No
         outside = [p for p in mentioned if not _under(p, roots)]
         if outside:
             return _out_of_scope(ctx, outside[0], "use")
-        if any(re.search(p, command, re.I) for p in gates["command_patterns"]):
-            media = [p for p in mentioned if p.suffix.lower() in gates["media_extensions"]]
-            names_fcpxml = any(w.lower().endswith(".fcpxml") for w in words)
-            return _gate_media(ctx, media, "this placement or delivery step", gates, require=names_fcpxml)
+        if any(re.search(p, command, re.I) for p in gates["command_patterns"]) and not command_reads_only(command):
+            return _gate_media(ctx, bash_media(command, cwd, gates["media_extensions"]), "this placement or delivery step", gates)
     return None
 
 
@@ -241,14 +411,8 @@ def _media_in_text(text: str, gates: dict, cwd: str | None) -> list[Path]:
     return [_real(unquote(f), cwd) for f in found]
 
 
-def _gate_media(ctx: Context, media: list[Path], what: str, gates: dict, *, require: bool) -> dict | None:
-    if ctx.project_dir is None:  # a client-only context has no approvals to check
-        return None
-    if not media:
-        if require:
-            return _deny("AEM-G05", f"{what} names no render, so AEM cannot check its approvals.",
-                         "Name each render on the command line so `aem check-approval` can check it, or the operator "
-                         "can type /allow AEM-G05 <reason>.")
+def _gate_media(ctx: Context, media: list[Path], what: str, gates: dict) -> dict | None:
+    if ctx.project_dir is None or not media:  # a client-only context has no approvals; no render named, nothing to check
         return None
     for m in media:
         try:

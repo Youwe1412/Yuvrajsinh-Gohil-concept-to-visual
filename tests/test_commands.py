@@ -387,8 +387,12 @@ class ContextText(WorldCase):
         self.assertIn("Skill: use `acme-studio`", t)
         self.assertIn(str(self.w.project / "approvals.jsonl"), t)
         self.assertEqual([p["id"] for p in d["preferences"]], ["A-01", "A-02"])
-        self.assertIn("Never write, edit or append to events.jsonl, approvals.jsonl", t)
+        self.assertIn("Do not write events.jsonl, approvals.jsonl", t)
         self.assertIn("`aem approve`", t)
+        # 0.9.0: the operator decides; the agent runs an operator command only when the latest message asks for it.
+        self.assertIn("only when the operator's latest message asks for that action", t)
+        self.assertIn("An earlier message is never standing permission", t)
+        self.assertIn("record what Ada said", t)
 
     def test_status_parts(self):
         self.w.use()

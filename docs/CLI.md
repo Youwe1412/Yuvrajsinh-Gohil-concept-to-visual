@@ -8,7 +8,9 @@ input error.
 Commands act on the project they run for, which comes from where they run (see [Which
 project](#which-project)); `--client` and `--project` override it. `--registry` picks another
 registry file. Some commands are the operator's alone and refuse to run for anyone else (see
-[Operator-only commands](#operator-only-commands)).
+[Operator-only commands](#operator-only-commands)). Since 0.9.0 "the operator" includes the operator's
+own message in chat: a turn that began with it carries a turn authority, on which the agent may run them
+and the guard never denies (see [Operator authority from chat](#operator-authority-from-chat)).
 
 ## Which project
 
@@ -57,7 +59,7 @@ says it did.
 | `report [--no-write]` | Writes `<project>/reports/time.md`. |
 | `approve <item> [path] [--gate G] [--row NAME] [--label]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. An image is approved as a still; `--row` approves one row of a plan table in `path`. `--label` also appends the ruling to the client's labelled cases. Operator only. |
 | `reject <item> --reason TEXT [--path FILE [--row NAME]] [--gate G] [--label]` | Appends a rejection: of that file (or plan row) when given, else of the item's latest approved render, whose approval stops standing. Operator only. |
-| `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated, verbatim entry to the client's decisions file, marked "entered by <operator>". Operator only. |
+| `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated, verbatim entry to the client's decisions file, marked "entered by <operator>". Operator only. On a turn authority the words must appear verbatim in the operator's message, or it refuses: "paste <contact>'s exact words in your message". |
 | `allow <rule-or-command> --reason TEXT [--once]` | An override the guards honour. `--once` is consumed by the next matching call. `--list`, `--revoke ID`. Operator only. |
 | `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval. |
@@ -66,7 +68,12 @@ says it did.
 | `rendered` | Checks the renders a finished shell command wrote, read as JSON on stdin (`{command, cwd, started_at, exit_code, probe_only}`). Runs `check-render` on each and returns a toast line and a note for the agent. The plugin runs it after every `Bash` call; see Render sentinel below. |
 | `guard` | Decides one tool call, read as JSON on stdin (`{tool, input, cwd}`). Exit 0 allow, 1 deny. The plugin runs it before every file or shell tool call; see Guards below. |
 | `drift [--client ID] [--skills-dir DIR]` | Text exports vs their HTML pages, installed skill vs master, and rule IDs in the skill vs the rules file. |
-| `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. |
+| `new-client <id> --name --design-system DIR --projects-root DIR [--contact] [--skill]` | Scaffolds a design system from `registry/client-template/` into a new or empty folder and adds a registry entry. Operator only. |
+| `authority open --session S --turn T [--origin O] [--prompt-id P]` | The plugin runs it when a turn begins with the operator's prompt (read on stdin): makes a turn authority and records the prompt; prints the nonce once. `--prompt-id` is the same prompt starting a later turn (it was queued). Operator only, and never on a turn authority. See [Operator authority from chat](#operator-authority-from-chat). |
+| `authority close --session S` | The turn ended: every authority of that session is deleted. Operator only, never on a turn authority. |
+| `authority uses [--after N]` | The operator commands that succeeded on the authority in `AEM_OPERATOR_TURN` (the plugin toasts each). Open. |
+| `integrity` | Compares each ledger with what AEM wrote and lists every line AEM did not write, with whether an operator's message let the write through. Exit 1 when there is any. See [Ledger integrity](#ledger-integrity). |
+| `accept-edit [--file NAME] [--reason TEXT]` | Accepts what `integrity` found (all ledgers, or one), recording an `edit_accepted` event, and re-baselines. Operator only. |
 
 ## Frame rate
 
@@ -124,8 +131,14 @@ The skill's line, with the skill's fields first:
 
 AEM's events: `start`, `finish`, `pause`, `resume`, `waiting_on_<who>`, `blocked`, the automatic
 events above, `render_check`, `approval`, `rejection`, `client_said`, `allow`, `allow_used`,
-`allow_revoked`, `review_import`, `denial`, `labelled_case`, `inbox_resolved`. Extra fields after the five: `source`, `session`, `tool`,
-`duration_s`, `render`, `render_sha256`, `result`, `backfilled`. Events entered with `--at` carry
+`allow_revoked`, `review_import`, `denial`, `labelled_case`, `inbox_resolved`, and since 0.9.0
+`operator_prompt` (the operator's message that opened a turn authority: `prompt_text` exactly as typed,
+`prompt_sha256`, `prompt_id`, `session`, `turn`, `origin`; `recorded_late` when it was first used in a
+project other than where it was typed), `operator_turn` (the same prompt starting a later turn),
+`allowed_by_operator_prompt` (a call the guard would have denied, with `rule`, `tool`, `subject`,
+`prompt_id`) and `edit_accepted`. Extra fields after the five: `source`, `session`, `tool`,
+`duration_s`, `render`, `render_sha256`, `result`, `backfilled`, and on anything written on a turn
+authority `via: "chat"`, `prompt_id` and `prompt_excerpt`. Events entered with `--at` carry
 `"backfilled": true` and the report counts them.
 
 ### approvals.jsonl
@@ -133,6 +146,9 @@ events above, `render_check`, `approval`, `rejection`, `client_said`, `allow`, `
 ```json
 {"gate": "G4", "scene": "fd_S01_next-token", "render": "renders/v09/fd_S01_next-token_v09.mp4", "render_sha256": "<64 hex>", "source_revision": "<git commit, or sha256: of the scene source>", "approver": "Yuvraj", "date": "2026-10-06", "type": "approval", "ts": "...", "render_check": "pass"}
 ```
+
+An approval or rejection made on a turn authority also carries `via: "chat"`, `prompt_id` and
+`prompt_excerpt` (the labelled case it labels carries `via` and `prompt_id`).
 
 `type` is `approval` (the default for lines without it), `rejection` (with `reason`) or `stale`
 (with `superseded_by_sha256` and `superseded_by_render`). An approval stands until a later
@@ -260,16 +276,22 @@ The plugin asks `aem guard` about every `Bash`, `Read`, `Write`, `Edit`, `MultiE
 project: the CLI resolves the project itself from the call's working folder (or `AEM_PROJECT`, or the
 session pin), so there is no stored state for a session to trust or a test to overwrite (the plugin's
 view, which draws the status line and the prompt section, is refreshed every 30 seconds). With no
-project resolved the guard allows every call except a write into the operator-nonce folder. Every denial is appended to `events.jsonl` as a
+project resolved the guard allows every call except a write into the operator-nonce folder.
+
+**On a turn authority the guard never denies** (0.9.0). The guard exists to stop the agent acting on its
+own authority; when the operator's own message started the turn, a call any rule below would deny is
+allowed and appended as an `allowed_by_operator_prompt` event naming the rule, the tool, the call and the
+prompt (`prompt_id`, an excerpt), and the operator gets a toast. Overrides (`/allow`) are not used up by
+such calls. In a turn without one (autonomous, a loop, a schedule, a peer's message) every rule applies. Every denial is appended to `events.jsonl` as a
 `denial` event, and its message tells the agent why and how the operator can approve or override.
 MCP tools are not checked.
 
 | Rule | Denies | Limits |
 |---|---|---|
 | AEM-G01 protected file | `Write`/`Edit`/`NotebookEdit` to a protected file (the registry's `protected_files`, plus the registry itself), compared after resolving symbolic links; a `Write`/`Edit` into the operator-nonce folder `~/.aem/nonces/` even with no project resolved; a `Bash` command whose text names a protected file (by path or file name), except AEM's read-only commands. | A shell command is read as text: a path assembled at run time (`f=events; echo >> $f.jsonl`), a script file that writes the ledger, or an MCP tool that writes files is not seen. Reading with the `Read` tool is allowed; `cat` of a protected file is denied as a side effect. |
-| AEM-G02 outside the client's folders | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no project resolved nothing is out of scope. |
+| AEM-G02 outside the client's folders (words are split as a shell splits them, so `ls ~/Tools/x;`, `(cd ~/x && ls)` and `ls ~/x|head` name `~/Tools/x` and `~/x`; an XPath such as `//asset` is not a path) | `Read`/`Write`/`Edit`/`Glob`/`Grep` of a path outside the active client's design system, its projects root, the active project, its audio libraries, the AEM repo, the registry's `shared_paths` and system folders (`/usr`, `/opt/homebrew`, `/tmp`, `/var/folders`, …); a `Bash` word that is such a path. | Only words that look like paths (`/…`, `~/…`, `./…`, `../…`) are checked. A command that reaches a file through a variable, a glob expanded later, `cd` then a relative path, or a program's own configuration is not seen. With no project resolved nothing is out of scope. |
 | AEM-G03 blocked command | A `Bash` command containing one of the client's `blocked_commands` (`snapshot --describe` for Joel). | Plain text match: a different spelling or a script that runs it is not seen. |
-| AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected), or names an `.fcpxml` but no render; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. |
+| AEM-G05 render not approved | A `Bash` command matching the client's `approval_gates.command_patterns` (FCPXML, placement, delivery, Joel's "Animations Done") that names a render without a standing approval (missing, stale or rejected): as a path, a bare relative word (`renders/x.mp4`) or a path inside quoted code; a `Write`/`Edit` of an `.fcpxml` whose content names such a render. **Never a read** (0.9.0): a command made only of programs that read (`cat`, `grep`, `rg`, `head`, `unzip`, `xmllint` without output, `ffprobe`, `jq`, `aem check-approval`, inline Python or Node code with no write in it, ...) is not a placement. Naming an `.fcpxml` with no render is no longer denied: there is nothing to check. | A placement step that reads its renders from a manifest the command does not name, or a pattern the registry does not list, is not checked. A read is recognised by program name and flags: a script *file* is not known to only read, so it is checked; a read-only program with a write redirect (`>`) is not a read. |
 
 **There is no AEM-G04 any more** (the number is not reused). Until 0.8.0 the guard matched the text of a
 shell command for the operator-only `aem` commands, which denied a commit message or a heredoc that
@@ -290,7 +312,7 @@ boundaries. The operator's own shell, another editor, or Codex without the hooks
 ## Operator-only commands
 
 `use`, `stage` (every action), `approve`, `reject`, `client-said`, `allow`, `new-client`,
-`inbox accept` and `inbox dismiss` change what the operator owns: approvals, rulings, overrides, the
+`accept-edit`, `inbox accept`, `inbox dismiss`, and the plugin's `authority open` and `close`, change what the operator owns: approvals, rulings, overrides, the
 ledger, the registry. **The CLI itself refuses them** unless the operator is shown to be running them,
 checked at the entry of the command (and again inside the functions that write the records), so how the
 command is spelled (a path, a wrapper, a script, `python3 -m aem`) does not matter. One of these must hold:
@@ -305,6 +327,10 @@ command is spelled (a path, a wrapper, a script, `python3 -m aem`) does not matt
   `AEM_OPERATOR_NONCE` to that one `aem` call. `aem` checks the hash, deletes the file (so it works once),
   and removes the variable from its own environment so nothing it starts inherits it. The nonce is never
   written, logged or shown. The plugin also gives one to its own automatic ledger events (`stage auto`).
+- **(c) Chat** (0.9.0). The operator's message stands for its turn: `AEM_OPERATOR_TURN` holds a valid
+  turn authority (next section). Every operator command is accepted on it except `authority open` and
+  `authority close` (an authority that could open authorities would let the agent write the prompt that
+  authorises it). It is not used up; `aem` removes the variable from its own environment.
 
 A refusal exits 2, says which command and why, and tells an agent to ask the operator. `status`,
 `context`, `report`, `check-render`, `check-approval`, `import-review`, `inbox` (list), `drift`, `guard`,
@@ -335,9 +361,69 @@ from inside such a session to see it.
   pass (b): the guard denies its `Write` and `Edit` tools there, but not a shell redirect.
 - A script that imports the `aem` package and sets its private flag passes the in-library backstop.
 - What catches the result is the records themselves: ledgers are append-only, approvals carry the render's
-  SHA-256, and Phase 4's integrity check compares them.
+  SHA-256, and `aem integrity` (0.9.0) reports every ledger line AEM did not write.
 - The marker list is the markers observed today; another agent host that sets none would pass (a) from a
   pseudo-terminal.
+
+## Operator authority from chat
+
+AEM's first principle since 0.9.0: **it allows whatever the operator asks for in chat.** The guard and the
+operator-only commands exist only to stop the agent acting on its own authority. When the operator has
+asked, the decision is the operator's; AEM records it and never blocks it.
+
+| When | The plugin | The CLI |
+|---|---|---|
+| A prompt arrives from an operator origin: the composer, the Remote Control bridge or the SDK host. Never a plugin, a peer session, a scheduled or `/loop` trigger, a task notification or the agent. | Before the prompt enters, keeps it; when its turn starts, runs `aem authority open --session S --turn T --origin O` (with its one-time nonce) and the prompt's exact text on stdin. A prompt typed during a turn is opened for that turn at once, and again (same `prompt_id`) for the next turn if its text starts it. | Writes a random nonce's SHA-256 to `~/.aem/nonces/<hash>` with `kind: "turn"`, the prompt text, session, turn, origin, `prompt_id` and an expiry 60 minutes on; appends `operator_prompt` to the project's `events.jsonl`; prints the nonce once. |
+| The turn runs. | Sets `AEM_OPERATOR_TURN=<nonce>` in its process environment, which every `Bash` call (the agent's and its subagents') and every `aem` call inherits. After each `Bash` call, `aem authority uses` and a toast per operator command: `approve fd_S01 via chat: '<prompt excerpt>'`. | `guard`: allows what it would deny and logs `allowed_by_operator_prompt`. Operator commands: accepted, each record carrying `via: "chat"`, `prompt_id`, `prompt_excerpt`. `client-said`: the quote must be in the prompt. |
+| The turn ends (`turn.complete` of the main loop), the session ends, or a prompt from a non-operator origin starts a new turn. | Runs `aem authority close --session S` and unsets `AEM_OPERATOR_TURN`. | Deletes every authority of that session. The nonce now opens nothing. |
+| 60 minutes pass. | — | The authority is refused as expired, whatever the turn does. |
+
+**Limits, plainly.**
+
+- The authority is the *turn's*, not the command's: during that turn the agent can run any operator
+  command, and the guard denies nothing. AEM cannot tell whether the operator's message actually asked for
+  that action; the context text and the studio skill tell the agent to act only on what the latest message
+  asks, and the record (`via: "chat"`, the prompt id, the full prompt text in `operator_prompt`) is what
+  lets the operator check afterwards. The only check on the words themselves is `client-said`'s.
+- The CLI does not verify that the process presenting the nonce belongs to that session; anything that
+  inherits or reads the environment of the turn's processes (a background job started in the turn, a
+  child process) holds the nonce until the turn ends.
+- During an operator turn the guard does not stop the agent writing `~/.aem/nonces/`, so it could forge an
+  authority for a later turn, or write a ledger by hand. Both are logged as `allowed_by_operator_prompt`,
+  and a hand-written ledger line stays flagged by `aem integrity` until the operator accepts it.
+- An agent that writes a nonce file by hand in an autonomous turn (its shell is not stopped from writing
+  files) forges one too: as before, cooperative, not a security boundary.
+- If a `turn.complete` is never delivered (a crash), the authority lasts until the next non-operator turn
+  starts, the session ends, or 60 minutes pass.
+- Codex has no turn authority: there the operator runs operator commands in a terminal.
+
+## Ledger integrity
+
+`events.jsonl`, `approvals.jsonl`, the client's decisions file and `critic/labelled-cases.jsonl` are
+AEM's ledgers. Every line AEM writes to one also goes, in the same locked write, into a manifest beside it
+(`.aem-integrity/<file>.jsonl`): a 16-hex-digit SHA-256 of the line (or, for an entry `client-said`
+inserts in the decisions file, the inserted lines and where). `aem integrity` compares each file with its
+manifest and reports:
+
+| Finding | Means |
+|---|---|
+| `inserted` | lines AEM did not write (hand-written, pasted, written by a script) |
+| `edited` | lines AEM wrote that now read differently |
+| `removed` | lines AEM wrote that are gone |
+
+Each finding says whether the guard let a call naming that file through on an operator's message
+(`allowed_by_operator_prompt`, with the prompt) or nothing recorded such a call ("outside any recorded
+operator prompt"). Findings stay until `aem accept-edit` (operator only; on chat it records the prompt),
+which appends an `edit_accepted` event (file, lines, examples, reason, what explained it) and re-baselines
+that file. `aem status` and the status line count the findings (`· 2 ledger edits to review`), and the
+agent's context tells it about them.
+
+The first time AEM writes a file that has no manifest, the lines already in it become the baseline,
+trusted as they stand: AEM cannot tell an older hand-written line from its own. Until then `integrity`
+says "no baseline yet". The manifests are protected like the ledgers (AEM-G01, and the folder name
+`.aem-integrity` in a shell command). Limits: the manifest is beside the ledger, so whoever can rewrite
+one can rewrite both consistently; a line identical to one AEM wrote cannot be told apart from it; the
+rules file is not a ledger and is not tracked.
 
 ## Codex (`aem codex-hook`)
 

@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import re
 
-from . import ledger
+from . import integrity, ledger
 from .registry import Context
 
-AGENT_DENIED = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard", "codex-hook")
+OPERATOR_COMMANDS = ("approve", "reject", "client-said", "allow", "stage", "use", "new-client", "accept-edit")
 
 
 def preferences(ctx: Context) -> list[dict]:
@@ -69,13 +69,23 @@ def build(ctx: Context) -> dict:
     lines += [
         "",
         "While this plugin is loaded:",
-        "- Never write, edit or append to events.jsonl, approvals.jsonl, the client's decisions file, "
-        "the rules file or critic/labelled-cases.jsonl yourself, by any tool. When one needs a line, "
-        "ask the operator to run the command: /stage, /pause, /resume, /wait, /approve, /reject, "
-        "/client-said or /allow. Read them with the Read tool, not the shell.",
-        "- Never run `aem " + "`, `aem ".join(AGENT_DENIED) + "`, `aem inbox accept` or `aem inbox dismiss` "
-        "yourself. You may run `aem status`, `aem inbox` (to list what waits on the operator), "
-        "`aem check-render`, `aem check-approval`, `aem drift`, `aem report` and `aem import-review`.",
+        "- The operator decides. AEM allows whatever the operator asks for in chat; its guard and commands exist "
+        "only to stop you acting on your own authority. A turn that began with the operator's own message carries "
+        "that authority (AEM_OPERATOR_TURN is set in your shell). A turn that did not (autonomous, a loop, a "
+        "schedule) does not, and then AEM's guard and the commands' own checks apply.",
+        "- Run `aem " + "`, `aem ".join(OPERATOR_COMMANDS) + "`, `aem inbox accept` or `aem inbox dismiss` only when "
+        "the operator's latest message asks for that action (\"approve\", \"reject\", \"record what "
+        f"{c.contact.split()[0] if c.contact else 'the client'} said\", \"start G2\"). An earlier message is never standing "
+        "permission. After each one, say what was recorded (the command's output names it). For `client-said` the "
+        "quote must appear verbatim in the operator's message; if it does not, ask the operator to paste the "
+        "client's exact words. Never run them on your own initiative.",
+        "- Do not write events.jsonl, approvals.jsonl, the client's decisions file, the rules file or "
+        "critic/labelled-cases.jsonl by hand. Use the commands: /stage, /pause, /resume, /wait, /approve, /reject, "
+        "/client-said, /allow. Read them with the Read tool, not the shell. If the operator explicitly asks for a "
+        "hand edit, make it and tell them: AEM logs it (`allowed_by_operator_prompt`), `aem integrity` flags the "
+        "line, and `aem accept-edit` accepts it when they say so.",
+        "- You may always run `aem status`, `aem inbox` (to list what waits on the operator), `aem check-render`, "
+        "`aem check-approval`, `aem drift`, `aem report`, `aem integrity` and `aem import-review`.",
         "- Before placing or delivering a render, `aem check-approval <path>` must pass.",
         "- After a render command finishes, AEM checks each new render (`aem check-render`) and tells you the "
         "result. A render that fails is not ready to show the operator. Renders run in the background are not "
@@ -84,6 +94,10 @@ def build(ctx: Context) -> dict:
         "another route to the same effect; tell the operator what was denied.",
         "- These are recorded checks, not security boundaries.",
     ]
+    integ = integrity.summary(ctx) if ctx.project_dir else {"findings": 0}
+    if integ["findings"]:
+        lines.append(f"- AEM integrity: {integ['findings']} ledger difference(s) in {', '.join(integ['files'])} were not "
+                     "written by AEM (`aem integrity` lists them). Tell the operator; only they accept them (`aem accept-edit`).")
     return {"active": True, "text": "\n".join(lines), "preferences": prefs, "protected": protected_paths(ctx),
             "skill": c.skill, "decisions_file": str(c.decisions_path), "gate": st["gate"] if st else None}
 

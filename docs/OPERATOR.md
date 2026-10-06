@@ -13,9 +13,11 @@ the agent. These are the moments where you act.
   close stages; AEM times them.
 - An **approval** covers one exact render: its SHA-256. Change one byte and the approval is
   **stale**: placement and delivery refuse it until you approve again.
-- Only **you** write the client's records: their words, approvals, rejections, overrides and the
-  critic's labelled cases. The agent can read them but not write them, and is told so. The `aem`
-  command itself refuses those commands unless you are the one running them (see below).
+- **You decide, and AEM allows whatever you ask for in chat.** The client's records (their words,
+  approvals, rejections, overrides, the critic's labelled cases) are written only by AEM's commands. You
+  run them, or the agent runs them **because your latest message asked** ("approve fd_S01", "record what
+  Joel said: …", "start G2"); each is recorded as done on your message. On its own initiative, or in a turn
+  you did not start, the agent cannot (see below).
 - Every check is a **recorded check, not a security boundary** (the limits are at the end).
 
 ## Starting a session
@@ -25,8 +27,8 @@ AEM finds the project from where the session runs, so there is nothing to type. 
 session you get one toast:
 
 ```text
-AEM 0.8.0 · joel/P2 · resolved from folder
-AEM 0.8.0 · no project (folder not registered)
+AEM 0.9.0 · joel/P2 · resolved from folder
+AEM 0.9.0 · no project (folder not registered)
 ```
 
 **No toast means the plugin is not loaded in that session** (not installed, disabled, or an older
@@ -151,12 +153,55 @@ to read protected files and the Edit tool for documents; if a harmless command i
 it once. (There is no longer a rule that reads text for *operator commands*: see the next section.) If `aem` cannot run at all, the plugin lets calls through and shows a toast every time:
 fix the install rather than ignore it.
 
+## Asking in chat (0.9.0)
+
+AEM's first principle: **it allows whatever you ask for in chat.** Its guard and its operator-only commands
+exist only to stop the agent acting on its own authority. When you have asked, the decision is yours; AEM
+records it and never blocks it.
+
+So you can just say it:
+
+```text
+approve fd_S01_next-token, the v09 render
+start G4 for fd_S02_tokens
+record what Joel said, his words: "Can we lose the caption under the button? It says what we can already see"
+yes, add that note to events.jsonl by hand
+```
+
+What happens:
+
+- When your message starts a turn, the plugin opens a **turn authority** for it and records your message,
+  word for word, as an `operator_prompt` event in the project's `events.jsonl` (with its SHA-256, the
+  session, the turn and the time). The plugin writes this, never the agent.
+- During that turn the agent may run `aem approve`, `reject`, `client-said`, `stage`, `allow`, `use`,
+  `accept-edit`, `inbox accept`/`dismiss`, `new-client`. Each record carries `via: "chat"`, your prompt's id
+  and an excerpt, and you get a toast: `approve fd_S01_next-token via chat: 'approve fd_S01_next-token, the
+  v09 render'`. The agent is told to run one only when your **latest** message asks for that action, to say
+  what was recorded, and never to treat an earlier message as standing permission.
+- **The client's words stay theirs.** `client-said` from chat is refused unless the quote appears verbatim in
+  your message: "paste Joel's exact words in your message". Paste them; the agent cannot paraphrase into
+  Joel's voice.
+- **The guard never denies during your turn.** A call that would have been denied (a hand edit of a ledger,
+  a folder outside the client's, a blocked command, a placement before approval) goes through, is logged as
+  `allowed_by_operator_prompt` with the rule it would have hit and your prompt, and you get a toast
+  (`AEM allowed Write on your message (AEM-G01 protected file would have denied it): '…'`).
+- The authority ends when the turn ends, or after 60 minutes, whichever comes first.
+
+**Not on your message** (an autonomous turn: a `/loop`, a schedule, a background task's notification, a
+peer session's message, anything that did not start with you typing): no authority; the guard and the
+commands' own checks apply exactly as before, and the agent has to ask you.
+
+**Ledger integrity.** A hand-written or edited ledger line, even one you asked for, is flagged by
+`aem integrity` (the status line shows `· 1 ledger edit to review`) until you accept it: say "accept that
+edit" or type `/accept-edit <reason>`. It says whether each one came through on your message (and which) or
+outside any recorded prompt; the latter is the case to look at.
+
 ## Why the agent cannot approve its own work
 
-`approve`, `reject`, `client-said`, `allow`, `stage`, `use`, `new-client` and `inbox accept`/`dismiss`
-are **refused by the `aem` command itself** unless you are the one running them: from your own
-Terminal (a real terminal, not under an AI agent), or through the plugin's slash command, which hands
-that one call a one-time nonce that lasts 60 seconds. It does not matter how the agent spells the command
+`approve`, `reject`, `client-said`, `allow`, `stage`, `use`, `new-client`, `accept-edit` and
+`inbox accept`/`dismiss` are **refused by the `aem` command itself** unless you are the one running them:
+from your own Terminal (a real terminal, not under an AI agent), through the plugin's slash command, which
+hands that one call a one-time nonce that lasts 60 seconds, or on your message in chat (above). It does not matter how the agent spells the command
 or what script it wraps it in. The old guard rule that matched the text of a command is gone, so a
 commit message or a heredoc that mentions `aem approve` is just text.
 
@@ -189,9 +234,11 @@ time) and the client's rules and decisions files. Nothing else needs to change.
 |---|---|
 | Toast "AEM guard could not run" | `aem` is missing or broken: `aem --version`, then `cli/install.sh` |
 | The status line lags a change made elsewhere | it re-reads `aem status` every 30 seconds; guards and render checks always ask the CLI directly, so they never lag |
-| No "AEM 0.8.0 · …" toast at session start | the plugin is not loaded in that session; check `claude plugin list` |
+| No "AEM 0.9.0 · …" toast at session start | the plugin is not loaded in that session; check `claude plugin list` |
 | A drift toast after `/aem use` | `aem drift` lists it: re-run the design system's text export, or reinstall the skill from its master |
 | Codex does not block anything | check `/hooks` in Codex (hooks need your trust), then `tests/live/codex-hooks-check.sh` |
+| The agent says "operator's command … the turn authority is unknown" after you asked it | the plugin is older than 0.9.0 (it opens no authority): update it (INSTALL.md, "Updating") and start a new session; meanwhile use the slash command |
+| `aem integrity` flags a line | look at it: `aem integrity` says which prompt let it through, if any; accept it with `/accept-edit <reason>` or by asking |
 | Slash commands refused: "operator's command … no operator nonce" | the plugin is older than the CLI (0.7.x cannot make nonces): update it (INSTALL.md, "Updating") and start a new session |
 | Done for the day | `/stage end`. Nothing needs clearing: the next session resolves from its own folder |
 

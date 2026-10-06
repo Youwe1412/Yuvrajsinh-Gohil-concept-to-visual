@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, codex, context, drift, guard, inbox, ledger, operator, registry, render, review, sentinel
+from . import VERSION, approvals, authority, clients, codex, context, drift, guard, inbox, integrity, ledger, operator, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -98,6 +98,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--label", action="store_true")
     _common(p)
 
+    p = sub.add_parser("authority", help="turn authority: open | close | uses (the plugin runs these)")
+    p.add_argument("action", choices=["open", "close", "uses"])
+    p.add_argument("--session", help="Claude Code session id")
+    p.add_argument("--turn", help="Claude Code turn id")
+    p.add_argument("--origin", help="where the operator's prompt came from (composer, bridge, sdk)")
+    p.add_argument("--prompt-id", help="(open) the same prompt starting a later turn")
+    p.add_argument("--after", type=int, default=0, help="(uses) only uses after this number")
+    _common(p)
+
+    p = sub.add_parser("integrity", help="compare each ledger with what AEM wrote; list lines AEM did not write")
+    _common(p)
+
+    p = sub.add_parser("accept-edit", help="accept the ledger edits integrity found, with a reason (operator only)")
+    p.add_argument("--file", action="append", dest="files", metavar="NAME", help="a ledger by file name (default: all with findings)")
+    p.add_argument("--reason")
+    _common(p)
+
     p = sub.add_parser("check-approval", help="does this exact file have a standing approval?")
     p.add_argument("path")
     p.add_argument("--item")
@@ -150,6 +167,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 # --- commands --------------------------------------------------------------------------
 
+def _action_label(a) -> str:
+    """What the operator's message had this command do, short, for the toast."""
+    c = a.cmd
+    if c == "stage":
+        return "stage " + " ".join([a.action, *a.args][:3])
+    if c in ("approve", "reject"):
+        return f"{c} {a.item}"
+    if c == "client-said":
+        return f"client-said ({a.scope})"
+    if c == "allow":
+        return f"allow {a.target}" if a.target else "allow"
+    if c == "inbox":
+        return f"inbox {a.action} {a.id or ''}".strip()
+    if c == "use":
+        return f"use {a.spec or '--clear'}"
+    if c == "accept-edit":
+        return "accept-edit"
+    return c
+
+
 def cmd_use(a):
     if a.clear:
         was = registry.clear_hint()
@@ -180,7 +217,11 @@ def _status(ctx) -> dict:
     parts = {"client": ctx.client.name, "project": ctx.project, "gate": st["gate"] if st else None,
              "scene": st["scene"] if st else None, "since": st["since"] if st else None,
              "paused": bool(st and st["paused"]), "waiting": st["waiting"] if st else None, "stale": ap["stale"]}
-    return {**ctx.summary(), "stage": st, "approvals": ap, "allows": clients.active_allows(ctx),
+    integ = integrity.summary(ctx)
+    if integ["findings"]:
+        line += f" · {integ['findings']} ledger edit(s) to review"
+    parts["integrity"] = integ["findings"]
+    return {**ctx.summary(), "stage": st, "approvals": ap, "allows": clients.active_allows(ctx), "integrity": integ,
             "last_render_check": last_check, "statusline": line, "statusline_parts": parts,
             "idle_minutes": ctx.client.idle_minutes, "gates": ctx.client.gates}
 
@@ -326,6 +367,54 @@ def cmd_allow(a):
     return r, f"Allowed {r['target']} ({'once' if r['once'] else 'until revoked'}): {r['reason']}  [{r['allow_id']}]"
 
 
+def cmd_authority(a):
+    if a.action == "open":
+        r = authority.open_authority(a, sys.stdin.read())
+        return r, f"Turn authority {r['prompt_id']} open for the operator's message: '{r['excerpt']}'"
+    if a.action == "close":
+        r = authority.close_authority(a)
+        return r, f"Closed {len(r['closed'])} turn authority(ies)."
+    r = authority.uses(a)
+    return r, f"{len(r['uses'])} new use(s) of the turn authority." if r["active"] else "No turn authority in this environment."
+
+
+def cmd_integrity(a):
+    ctx = registry.context(a, require_project=False)
+    r = integrity.check(ctx)
+    lines = []
+    for f in r["files"]:
+        if not f["baseline"]:
+            lines.append(f"  {f['name']}: no baseline yet (AEM records one the first time it writes the file)")
+        elif not f["findings"]:
+            lines.append(f"  {f['name']}: matches what AEM wrote")
+        else:
+            lines.append(f"  {f['name']}: {len(f['findings'])} difference(s), {f['explanation']}")
+            for fi in f["findings"]:
+                where = (f"line(s) {', '.join(map(str, fi['lines'][:6]))}" if fi["lines"]
+                         else f"after line {fi['after_line']}")
+                lines.append(f"    {fi['kind']} {where}" + (f", {fi['removed_count']} AEM line(s) gone" if fi["removed_count"] else ""))
+                for x in fi["now"][:3]:
+                    lines.append(f"      {x['line']}: {x['text']}")
+    head = ("Ledgers match what AEM wrote." if r["ok"] else
+            f"{r['findings']} ledger difference(s) AEM did not write ({r['unexplained']} outside any operator prompt, "
+            f"{r['during_operator_prompt']} while an operator prompt let the call through). `aem accept-edit` accepts them.")
+    text = head + "\n" + "\n".join(lines)
+    if not r["ok"]:
+        err = AemError(head, data=r)
+        err.exit_code = 1
+        err.text = text
+        raise err
+    return r, text
+
+
+def cmd_accept_edit(a):
+    ctx = registry.context(a, require_project=False)
+    r = integrity.accept(ctx, a.files, a.reason)
+    if not r["accepted"]:
+        return r, r["message"]
+    return r, "Accepted: " + "; ".join(f"{x['file']} ({', '.join(x['kinds'])})" for x in r["accepted"])
+
+
 def cmd_check_approval(a):
     ctx = registry.context(a)
     r = approvals.check(ctx, a.path, item=a.item, gate=a.gate)
@@ -441,7 +530,8 @@ def cmd_new_client(a):
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "stage": cmd_stage, "report": cmd_report, "approve": cmd_approve,
     "reject": cmd_reject, "client-said": cmd_client_said, "allow": cmd_allow, "check-approval": cmd_check_approval,
-    "check-render": cmd_check_render, "import-review": cmd_import_review, "drift": cmd_drift, "guard": cmd_guard, "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,
+    "check-render": cmd_check_render, "import-review": cmd_import_review, "authority": cmd_authority,
+    "integrity": cmd_integrity, "accept-edit": cmd_accept_edit, "drift": cmd_drift, "guard": cmd_guard, "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,
 }
 
 
@@ -490,8 +580,9 @@ def main(argv=None) -> int:
         ap.print_help()
         return 2
     try:
-        operator.require(a.cmd, getattr(a, "action", None) if a.cmd == "inbox" else None)
+        operator.require(a.cmd, getattr(a, "action", None) if a.cmd in ("inbox", "authority") else None)
         data, text = COMMANDS[a.cmd](a)
+        operator.log_use(_action_label(a))
         if as_json:
             print(json.dumps({"ok": True, **data} if "ok" not in data else data, ensure_ascii=False, default=_jsonable))
         else:
