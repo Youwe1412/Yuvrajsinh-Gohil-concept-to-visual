@@ -288,16 +288,18 @@ counted as work. Backfilled events (`--at`) are marked and counted. It is for pl
 
 ## 8. Testing and verification
 
-| What | Result at 0.8.0 (after Phase 2) |
+| What | Result at 0.9.0 (earlier results say when they were run) |
 |---|---|
-| CLI unit tests (`tests/run.sh`, which wraps `python3 -m unittest discover -s tests -t tests`) | 157 pass |
-| Plugin tests (`claude plugin test`) | 44 pass in 6 files, terminal, desktop and mobile surfaces; 40 consecutive runs without a failure (a race in the idle tick and a timing dependency in the inbox tests were fixed on the way) |
+| CLI unit tests (`tests/run.sh`, which wraps `python3 -m unittest discover -s tests -t tests`) | 194 pass (157 at 0.8.0, plus 37 in `tests/test_authority.py`: authority from chat, the guard on it, `client-said` from chat, the P2 friction, integrity, isolation) |
+| Plugin tests (`claude plugin test`, Claude Code 2.1.288) | 55 pass in 7 files (44 at 0.8.0, plus 11 in `tests/authority.test.ts`). The `claude` on PATH (2.1.283) cannot load the plugin (`prompt.compose` is not an event there); `tests/run.sh` uses the desktop app's newest bundled build |
+| P2 friction regression | the four friction tests fail against the 0.8.0 guard and pass against 0.9.0 |
+| Live chat authority (`tests/live/chat-authority-check.sh`, headless, installed plugin, sandbox) | **not run**: headless `claude -p` could not authenticate ("OAuth session expired"). That `$.env.set` reaches the Bash tool rests on the engine's documentation and the plugin tests' mocked engine, not on a live session yet |
 | Isolation | the run fails if `~/.aem` or `registry/clients.json` changed; it did not |
 | `claude plugin validate` (plugin and marketplace) | pass |
 | `tsc` strict | **not re-run**: no TypeScript compiler is installed here (it was 0 errors at `275e0bc`) |
 | Flash scan on 59 real P1 masters and the client-fix renders | Joel's flash caught, fix passes (run at `275e0bc`, not repeated) |
-| `aem drift` on Joel's real design system | no drift (at `275e0bc`) |
-| Marketplace install (isolated config, Claude Code 2.1.288) | added, installed v0.7.0, enabled, `/aem status` answered (at `275e0bc`; 0.8.0 not installed yet) |
+| `aem drift` on Joel's real design system | no drift (after the 0.9.0 skill change) |
+| Marketplace install | 0.9.0 installed for the user from the local marketplace (`claude plugin update`), enabled; takes effect in new sessions |
 | Codex 0.146 live (`tests/live/codex-hooks-check.sh`) | SessionStart context ran; the agent's `aem approve` was refused by the CLI itself (no hook needed) |
 | Real P2 | `aem status` from the P2 folder resolves `joel/P2`, fps 25/1 from `aem.project.json`; from the AEM repo it resolves no project |
 | Live guard in the build session | denied the agent's own commands several times (G01, G02, G04) before 0.8.0, including the false positives that motivated §12 |
