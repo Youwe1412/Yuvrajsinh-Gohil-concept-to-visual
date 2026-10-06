@@ -12,6 +12,9 @@ import atexit
 import contextlib
 import json
 import os
+import pty
+import secrets
+import time
 import shutil
 import subprocess
 import sys
@@ -24,6 +27,7 @@ AEM = REPO / "cli" / "bin" / "aem"
 sys.path.insert(0, str(REPO / "cli"))
 
 import isolation  # noqa: E402  (tests/isolation.py)
+from aem import operator as aem_operator  # noqa: E402
 
 REAL_STATE_BEFORE = isolation.snapshot()
 SANDBOX = isolation.sandbox(prefix="aem-tests-")
@@ -148,12 +152,31 @@ class World:
                 else:
                     os.environ[k] = v
 
+    # --- operator commands: a nonce the way the plugin makes one, or none -------------------------
+
+    def make_nonce(self, ttl_s: float = 60.0) -> str:
+        """A one-time operator nonce, written as the plugin writes it: only its SHA-256 on disk."""
+        nonce = secrets.token_hex(32)
+        d = self.home / "nonces"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / aem_operator.nonce_hash(nonce)).write_text(json.dumps({"expires_at": time.time() + ttl_s}), encoding="utf-8")
+        return nonce
+
+    def _env_for(self, args, env, operator):
+        e = {**self.env, **(env or {})}
+        name = aem_operator.command_name(args[0], args[1] if len(args) > 1 else None) if args else None
+        if name and operator is not False and "AEM_OPERATOR_NONCE" not in e:
+            e["AEM_OPERATOR_NONCE"] = self.make_nonce()
+        return e
+
     def run(self, *args, stdin: str | None = None, env: dict | None = None, check: bool = False,
-            cwd: Path | str | None = None):
+            cwd: Path | str | None = None, operator: bool | None = None):
         """Run the CLI with --json; returns (exit code, parsed JSON). It runs in the project folder, so
         the project resolves from the folder as it does for a session started there; pass cwd=self.tmp
-        for a process that is in no project."""
-        e = {**self.env, **(env or {})}
+        for a process that is in no project. An operator-only command gets a valid one-time nonce, as
+        the plugin's slash command would give it, unless operator=False (then it has none, as an agent
+        has none)."""
+        e = self._env_for(args, env, operator)
         p = subprocess.run([sys.executable, str(AEM), *args, "--json"], input=stdin, capture_output=True,
                            text=True, env=e, cwd=str(cwd if cwd is not None else self.project))
         try:
@@ -164,11 +187,46 @@ class World:
             raise AssertionError(f"aem {' '.join(args)} exited {p.returncode}: {data}")
         return p.returncode, data
 
-    def run_raw(self, *args, stdin: str | None = None, env: dict | None = None, cwd: Path | str | None = None):
+    def run_raw(self, *args, stdin: str | None = None, env: dict | None = None, cwd: Path | str | None = None,
+                operator: bool | None = None):
         """The CLI without --json, for argument errors and text output: a CompletedProcess."""
-        e = {**self.env, **(env or {})}
+        e = self._env_for(args, env, operator)
         return subprocess.run([sys.executable, str(AEM), *args], input=stdin, capture_output=True, text=True, env=e,
                               cwd=str(cwd if cwd is not None else self.project))
+
+    def run_tty(self, *args, env: dict | None = None, cwd: Path | str | None = None, keep_markers: bool = False,
+                keyboard: str | None = None):
+        """Run the CLI as it runs in the operator's Terminal: stdin, stdout and stderr on a real pseudo-terminal
+        that is the process's controlling terminal. Returns (exit code, output). The agent markers
+        (CLAUDECODE, CODEX_CI, ...) are removed from its environment, as the operator's terminal has none,
+        unless keep_markers=True (then it is an agent that allocated a terminal). No nonce is given."""
+        e = dict(self.env)
+        e.pop("AEM_OPERATOR_NONCE", None)
+        if not keep_markers:
+            for name in aem_operator.AGENT_MARKERS:
+                e.pop(name, None)
+        e.update(env or {})
+        pid, fd = pty.fork()
+        if pid == 0:  # the child: stdin, stdout, stderr are the terminal, and it is the controlling terminal
+            try:
+                os.chdir(str(cwd if cwd is not None else self.project))
+                os.execve(sys.executable, [sys.executable, str(AEM), *args], e)
+            finally:
+                os._exit(127)
+        if keyboard is not None:
+            os.write(fd, keyboard.encode())
+        out = b""
+        while True:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        _, status = os.waitpid(pid, 0)
+        os.close(fd)
+        return os.waitstatus_to_exitcode(status), out.decode("utf-8", "replace")
 
     def use(self, extra=()):
         """The last-used hint for acme/P1. Commands do not need it: the project resolves from the folder."""

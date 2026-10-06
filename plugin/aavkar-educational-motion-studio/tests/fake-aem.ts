@@ -10,6 +10,7 @@ export type World = {
   calls: string[][]
   stdins: (string | undefined)[]
   envs: (Record<string, string> | undefined)[]
+  files: { path: string; text: string }[]
   toasts: string[]
   statuses: (string | undefined)[]
   clock: ReturnType<typeof mock.clock>
@@ -20,9 +21,9 @@ export type World = {
 
 export const NOW = Date.parse('2026-10-06T10:05:00+05:30')
 
-export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string } = {}): World {
-  const w: World = { calls: [], stdins: [], envs: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
-  mock.env(on, { HOME: '/Users/test' })
+export function floor(on: On, route: Router, opts: { cannotStart?: boolean; toolMs?: Record<string, number>; selection?: string; env?: Record<string, string>; failWrite?: boolean } = {}): World {
+  const w: World = { calls: [], stdins: [], envs: [], files: [], toasts: [], statuses: [], clock: mock.clock(on, { now: NOW }), toolsRun: [], commands: [], panes: [] }
+  mock.env(on, { HOME: '/Users/test', ...opts.env })
   mock.store(on)
   on('process.run', ($, e) => {
     w.calls.push([...e.argv])
@@ -33,6 +34,11 @@ export function floor(on: On, route: Router, opts: { cannotStart?: boolean; tool
     const r = route(args, e.init?.stdin)
     const stdout = r.json !== undefined ? JSON.stringify(r.json) : (r.text ?? '')
     return { value: { exitCode: r.code ?? 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.write', ($, e) => {
+    if (opts.failWrite) throw new Error('EACCES')
+    w.files.push({ path: e.path, text: e.text })
+    return { value: undefined }
   })
   on('ui.toast', ($, e) => {
     w.toasts.push(e.text)

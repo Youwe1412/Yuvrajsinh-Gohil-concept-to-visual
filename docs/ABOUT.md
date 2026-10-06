@@ -5,7 +5,9 @@ part does, how the parts fit, how the studio should use it day to day, what it d
 not do, and where it stands today. The other docs go deeper: [INSTALL.md](INSTALL.md) (setup),
 [OPERATOR.md](OPERATOR.md) (daily use), [CLI.md](CLI.md) (every command, format and limit).
 
-Written 6 October 2026, at commit `275e0bc` plus this document (plugin 0.7.0).
+Written 6 October 2026 at commit `275e0bc` (plugin 0.7.0), and updated the same day for the 0.8.0
+redesign (§12): there is no global active project, and the CLI refuses operator-only commands itself.
+Sections 3, 4, 5, 9 and 11 describe 0.8.0; §12 says what changed and why.
 
 ---
 
@@ -78,13 +80,14 @@ Installed by `cli/install.sh` as a link at `~/.local/bin/aem`. Every command tak
 
 | Module | Holds |
 |---|---|
-| `registry.py` | Reads the registry; finds the client and project; the active project (`~/.aem/active.json`, `AEM_HOME` to move it) |
+| `registry.py` | Reads the registry; resolves the project for every call (`AEM_PROJECT`, the plugin's session pin, the working folder); refuses temporary or out-of-registry folders; the last-used hint |
+| `operator.py` | The check at the entry of every operator-only command: a real terminal with no agent markers, or the plugin's one-time nonce |
 | `fps.py` | Frame rates as exact rationals (24000/1001, never 23.976); discovery from `aem.project.json`, FCPXML, `data/words.json`, `frame.md`; refuses conflicts; timecode incl. drop-frame |
 | `ledger.py` | `events.jsonl`: stages, waits, pauses, automatic events, the time report |
 | `approvals.py` | `approvals.jsonl`: approve, reject, stale marks, the approval check; item kinds (render, still, plan row) |
 | `render.py` | `check-render`: probe against spec, frame count against the composition's duration, and the one/two-frame flash scan |
 | `sentinel.py` | `rendered`: is a finished command a render, which files did it write, check each |
-| `guard.py` | `guard`: rules AEM-G01 … G05 for one tool call |
+| `guard.py` | `guard`: rules AEM-G01, G02, G03 and G05 for one tool call (there is no G04) |
 | `context.py` | `context`: the text the agent is given each session |
 | `review.py` | `import-review`: Frame.io CSV → frames, shots, word IDs, drafts |
 | `inbox.py` | `inbox`: what waits on the operator; labelled cases from rulings |
@@ -97,8 +100,8 @@ The commands, grouped by who runs them:
 
 | Who | Commands |
 |---|---|
-| **Operator only** (the guard denies them to the agent) | `use` (and `use --clear`), `stage`, `approve`, `reject`, `client-said`, `allow`, `new-client`, `inbox accept`, `inbox dismiss` |
-| **Plugin / Codex only** | `guard`, `codex-hook` (denied to the agent); `rendered` (harmless) |
+| **Operator only** (the CLI refuses them unless you are running them, §12) | `use` (and `use --clear`), `stage` (including the plugin's automatic `stage auto`), `approve`, `reject`, `client-said`, `allow`, `new-client`, `inbox accept`, `inbox dismiss` |
+| **Plugin / Codex run them** | `guard`, `rendered`, `codex-hook` (open: they only judge or check) |
 | **Anyone, read-mostly** | `status`, `context`, `report`, `check-render`, `check-approval`, `import-review` (writes drafts only), `inbox` (list), `drift`, `codex-config` |
 
 ### 3.2 The registry (`registry/`)
@@ -128,7 +131,7 @@ packages, HyperFrames, Cut Assist, fcp-edit-workflow) and `clients`. Joel's entr
 decisions file, rules file, `critic/labelled-cases.jsonl` with its header, `text/`, a README and a
 registry entry template.
 
-### 3.3 The Claude Code plugin (`plugin/aavkar-educational-motion-studio/`, v0.7.0)
+### 3.3 The Claude Code plugin (`plugin/aavkar-educational-motion-studio/`, v0.8.0)
 
 One plugin of function hooks. The engine allows one hook per event per module and follows `$`
 only within one file, so `hooks/register.tsx` owns every `on(...)`, builds an `io` object of
@@ -136,7 +139,7 @@ closures over `$`, and passes it to five feature files that never see `$`:
 
 | Feature | File | What it does |
 |---|---|---|
-| Context | `context.ts` | On session start and every 30 s: `aem status` + `aem context` → the status line (`AEM · client · project · gate scene · h:mm · N stale`) and a prompt section telling the agent the project, gate, frame rate, files to read first, Joel's J- preferences, the protected files and which `aem` commands it may not run. Toasts drift. `/aem use`, `/aem status`, `/aem new-client`. |
+| Context | `context.ts` | On session start and every 30 s: `aem status` + `aem context` → the status line (`AEM · client · project · gate scene · h:mm · N stale`) and a prompt section telling the agent the project, gate, frame rate, files to read first, Joel's J- preferences, the protected files and which `aem` commands it may not run. Toasts drift. A toast at every session start (`AEM 0.8.0 · joel/P2 · resolved from folder`, or `… no project (folder not registered)`). `/aem use` (checks with the CLI, then pins the project to this session), `/aem use --clear` (drops the pin), `/aem status`, `/aem new-client`. |
 | Ledger | `ledger.ts` | Automatic events: session start/end, your prompts (with origin), turn start/end, tool calls ≥ 30 s, idle start/end (no prompt and no turn for `idle_minutes`, measured from the last activity). `/stage`, `/pause`, `/resume`, `/wait`, `/report`. |
 | Guard | `guard.ts` | Before every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Glob`, `Grep`, `LS` call (subagents' too): `aem guard`. A denial never runs; the agent is told the rule, why, and what the operator can do; you get a toast. `/approve`, `/reject`, `/client-said`, `/allow`. |
 | Render sentinel | `sentinel.ts` | After every `Bash` call: `aem rendered`. For a render, a pass/fail toast with the first reason, the full result added after the command's output for the agent, and the status line redrawn (stale count). |
@@ -144,11 +147,15 @@ closures over `$`, and passes it to five feature files that never see `$`:
 
 Settings: `aemPath` (default `aem`, falls back to `~/.local/bin/aem`) and `reviewInbox` (off).
 Slash commands that change records answer only to the operator: prompts from the composer, the
-bridge or the SDK; a plugin, a peer agent or the agent itself is refused.
+bridge or the SDK; a plugin, a peer agent or the agent itself is refused. For each operator command
+the plugin makes a random one-time nonce, writes only its SHA-256 to `~/.aem/nonces/` with a
+60-second expiry, and hands the nonce to that one `aem` call, which is how the CLI knows the
+operator typed it (`hooks/aem.ts`, `hooks/sha256.ts`).
 
 State it keeps (`types/index.d.ts`): `view` (what `aem status`/`context` said), `ledger` (session
 recorded for, last activity, idle start, running turn, idle minutes), `inbox` (items, the item
-asking for a reason, last message).
+asking for a reason, last message), and `pin` (the session's `<client>/<project>`, passed to every
+`aem` call as `AEM_PROJECT`; nothing global stores a project).
 
 ### 3.4 Codex (`aem codex-hook`, `aem codex-config`)
 
@@ -189,7 +196,8 @@ had SHA-256 `a75f6acf…` and the previous zip `7a423a7e…`.
 
 | File | Where | Written by | Format |
 |---|---|---|---|
-| `active.json` | `~/.aem/` | `aem use` | `{client, project, project_dir, registry, fps{num,den,source}, set_at}` |
+| `active.json` | `~/.aem/` | `aem use` | **A last-used hint only**, `{_comment, client, project, project_dir, set_at}`: `aem status` shows it when nothing resolved; nothing else reads it. A hint pointing outside the registry's roots is renamed `active.json.stale`. |
+| `nonces/<sha256>` | `~/.aem/` | the plugin | `{expires_at}`: the hash of a one-time operator nonce; deleted when used or expired. The guard denies the agent's Write and Edit there. |
 | `events.jsonl` | project | AEM only | skill's `{ts, gate, scene, event, note}` + `source`, `session`, `turn`, `tool`, `duration_s`, `render`, `render_sha256`, `result`, `rule`, `allow_id`, `inbox_ref`, `agent`, `backfilled`… |
 | `approvals.jsonl` | project | `approve`, `reject`, `check-render` (stale marks) | skill's `{gate, scene, render, render_sha256, source_revision, approver, date}` + `type` (approval / rejection / stale), `ts`, `render_check`, `item_kind`, plan-row fields |
 | `reports/time.md` | project | `report` | per gate, per scene, per gate-and-scene, with how each number was computed |
@@ -208,8 +216,10 @@ never an edit.
 
 The operator is Yuvraj (or whoever runs the studio). "Agent" is Claude Code with the plugin.
 
-**Start.** `/aem use joel/P2`. Check the status line and any drift toast. If the frame rate is not
-found or disagrees, fix the source or pass `--fps`.
+**Start.** Start Claude Code in the project's folder (`P2 - Claude Code`). Check the start toast
+(`AEM 0.8.0 · joel/P2 · resolved from folder`; no toast means the plugin is not loaded), the status
+line and any drift toast. Started somewhere else? `/aem use joel/P2` pins it to that session. If the
+frame rate is not found or disagrees, fix the source: state it in `aem.project.json`.
 
 **G1 Inputs.** `/stage G1`. The agent builds the word map, footage inventory and inputs list, per
 the skill. If you are waiting for Joel's footage: `/wait joel`; `/stage G1` or `/resume` when it
@@ -237,7 +247,7 @@ In `/inbox`, rule on each comment (Keep, Change, Remove, or Reject a mis-mapped 
 Joel said with `/client-said video --source "Frame.io, <date>" <his words>`. Shots with no comment
 stay pending: silence is not a ruling.
 
-**Close.** `/stage end`, `/report`. `/aem use --clear` if no project should be active.
+**Close.** `/stage end`, `/report`. Nothing needs clearing: a project is not stored anywhere global.
 
 **When the agent is blocked**, read the toast. Usually it is right (it tried to write a ledger, or to
 place an unapproved render). If it is a harmless false match, `/allow <rule-or-text> <reason>` once.
@@ -275,17 +285,19 @@ counted as work. Backfilled events (`--at`) are marked and counted. It is for pl
 
 ## 8. Testing and verification
 
-| What | Result at `275e0bc` |
+| What | Result at 0.8.0 (after Phase 2) |
 |---|---|
-| CLI unit tests (`python3 -m unittest discover -s tests -t tests`) | 109 pass |
-| Plugin tests (`claude plugin test`) | 33 pass (context 7, guard 8, ledger 6, sentinel 6, inbox 6), terminal, desktop and mobile surfaces |
+| CLI unit tests (`tests/run.sh`, which wraps `python3 -m unittest discover -s tests -t tests`) | 157 pass |
+| Plugin tests (`claude plugin test`) | 44 pass in 6 files, terminal, desktop and mobile surfaces; 40 consecutive runs without a failure (a race in the idle tick and a timing dependency in the inbox tests were fixed on the way) |
+| Isolation | the run fails if `~/.aem` or `registry/clients.json` changed; it did not |
 | `claude plugin validate` (plugin and marketplace) | pass |
-| `tsc` strict | 0 errors |
-| Flash scan on 59 real P1 masters and the client-fix renders | Joel's flash caught, fix passes |
-| `aem drift` on Joel's real design system | no drift |
-| Marketplace install (isolated config, Claude Code 2.1.288) | added, installed v0.7.0, enabled, `/aem status` answered |
-| Codex 0.146 live (`tests/live/codex-hooks-check.sh`) | SessionStart context ran; PreToolUse blocked `aem approve` (AEM-G04) |
-| Live guard in the build session | denied the agent's own commands several times (G01, G02, G04), including false positives listed in §9 |
+| `tsc` strict | **not re-run**: no TypeScript compiler is installed here (it was 0 errors at `275e0bc`) |
+| Flash scan on 59 real P1 masters and the client-fix renders | Joel's flash caught, fix passes (run at `275e0bc`, not repeated) |
+| `aem drift` on Joel's real design system | no drift (at `275e0bc`) |
+| Marketplace install (isolated config, Claude Code 2.1.288) | added, installed v0.7.0, enabled, `/aem status` answered (at `275e0bc`; 0.8.0 not installed yet) |
+| Codex 0.146 live (`tests/live/codex-hooks-check.sh`) | SessionStart context ran; the agent's `aem approve` was refused by the CLI itself (no hook needed) |
+| Real P2 | `aem status` from the P2 folder resolves `joel/P2`, fps 25/1 from `aem.project.json`; from the AEM repo it resolves no project |
+| Live guard in the build session | denied the agent's own commands several times (G01, G02, G04) before 0.8.0, including the false positives that motivated §12 |
 
 Real client files were only read, except the skill change in §3.6, which the brief asked for.
 Everything else was tested on copies in temporary folders.
@@ -299,7 +311,7 @@ Everything else was tested on copies in temporary folders.
 | AEM-G01 protected file | a path built at run time, a script that writes the ledger, an MCP tool | any command whose text names a protected file (`cmp joel-decisions.md`): use the Read tool |
 | AEM-G02 outside the client's folders | files reached through variables, globs expanded later, `cd` then a relative path, a program's own config | a tool outside `shared_paths` (the Claude Code app folder was, until added) |
 | AEM-G03 blocked command | another spelling, a wrapper script | — |
-| AEM-G04 operator-only command | the Python package called from a script | a command that merely mentions one (a heredoc writing docs, a commit message) |
+| Operator-only commands (the CLI, §12) | an agent that strips the agent markers from its environment and allocates a terminal, or writes a nonce file with a shell command; a script that sets the library's private flag | — (a commit message or heredoc that mentions one is just text) |
 | AEM-G05 render not approved | renders read from a manifest the command does not name; unlisted patterns | — |
 | Render sentinel | background renders; unlisted render scripts; renders written outside `renders/` and not named | other media changing under `renders/` during the command is checked too |
 | Inbox | not live (refreshed on open and after each button); plan tables must be Markdown tables | an identical file under another name counts as already ruled |
@@ -339,24 +351,60 @@ What the Claude Code API could not do, and the nearest thing built instead:
 
 ---
 
-## 11. Where things stand (6 October 2026)
+## 11. Where things stand (6 October 2026, after Phases 1 and 2 of 0.8.0)
 
 Done and committed: Phases 1–6 and most of Phase 7 (marketplace, Codex parity, docs, the skill
 change, the guard fix).
 
 Not done yet:
 
-- **The end-to-end acceptance test is in progress.** Step 1 (`/aem use`, `/stage G1`) is done on a
-  temporary copy of P1 scene #20 (next-token). Steps 2–8 (protected-file edit denied, render and
+- **The end-to-end acceptance test is in progress**, and has to be re-planned for 0.8.0 (it runs in a
+  sandbox with `AEM_PROJECT`; `tests/acceptance/operator.sh init`). Step 1 was done on a temporary
+  copy of P1 scene #20 (next-token) before the redesign. Steps 2–8 (protected-file edit denied, render and
   check, `/approve`, change source and re-render → stale, placement denied, re-approve → placement
   allowed, `/report` with idle separated) remain. Its operator steps are typed into headless Claude
   Code sessions by `tests/acceptance/operator.sh`; the agent steps run live in a session with the
   plugin. Its results will go in `docs/ACCEPTANCE.md`.
-- **`~/.aem/active.json` currently points at that temporary copy**, so a Claude Code session with
-  the plugin is guarded against Joel's temp folders until the test ends with `/aem use --clear`.
 - **Not pushed anywhere**: the repository has no remote yet, so the marketplace works from a local
   path until it is on GitHub.
 - **Not switched on for you**: the review inbox setting is off; Codex hooks are not in your
   `~/.codex/config.toml` (run `aem codex-config` and add them when you want them).
 - Installing the plugin from the marketplace into your own Claude Code (rather than the development
-  folder this session used) is yours to do, per INSTALL.md.
+  folder this session used) is yours to do, per INSTALL.md. **The installed plugin is still 0.7.0 until
+  you update it, and the CLI you are running is already 0.8.0**: until you update the plugin, its slash
+  commands and automatic ledger events are refused by the CLI (INSTALL.md, "Updating").
+- Phases 3 and later of the 0.8.0 redesign are not done: the guard's G01/G02 text matching is as
+  limited as §9 says, and there is no ledger integrity check yet.
+- P2 is registered (`joel/P2`, `P2 - Claude Code`, 25/1 from `RoughCut.mp4`, 3840 × 2160); it has no
+  HyperFrames project yet.
+
+---
+
+## 12. What 0.8.0 changed, and why (6 October 2026)
+
+The first acceptance run left the one global file `~/.aem/active.json` pointing at a temporary copy of
+P1, with that copy's registry path in it. Every session then trusted it: the guard scoped work to a
+`/tmp` project, the ledger wrote there, and the operator's own `/aem use --clear` went to a session
+without the plugin and did nothing, silently. Five faults, five fixes:
+
+| Fault | Fix |
+|---|---|
+| A global file held the active project and its registry path, and a test overwrote it | **No global state.** The project is resolved per call: `AEM_PROJECT`, the plugin's session pin, the working folder, else none. The registry is never stored. `active.json` is a labelled last-used hint that only `aem status` shows; a stale one is renamed and reported. Tests run in a sandbox and a test fails if `~/.aem` or `registry/clients.json` changed. |
+| A project under `/tmp` was accepted | Refused unless `AEM_SANDBOX=1` (only the test sandbox sets it), and so is a folder outside the client's roots. |
+| `/aem use --clear` failed silently in a session without the plugin | The pin lives in the plugin and dies with the session. Every session shows a start toast; no toast means no plugin. |
+| The guard read shell text: `"path";` became a path, a commit message or heredoc naming `aem approve` was denied | **Operator-only commands are checked by the CLI, not by text.** The CLI refuses them unless a real terminal (no agent markers) or the plugin's one-time nonce shows the operator is running them, however they are spelled. AEM-G04 is gone. (The remaining text rules, G01, G02 and G03, and the tokenizer false positives in them, are Phase 3.) |
+| A cached view let an edit through for minutes | Fixed in 0.7.0, test kept: every guarded call goes to the CLI. |
+
+Experiments behind the operator check (CLI.md has the table): neither Claude Code's Bash tool nor
+Codex's shell can open `/dev/tty`; but a pseudo-terminal the agent's own shell allocates (`script`,
+Python's `pty`) passes a bare terminal test, so the check also requires that none of the markers an
+agent host sets (`CLAUDECODE`, `CODEX_CI`, ...) is in the environment. That is cooperative: an agent
+that strips them, or writes a nonce hash file with a shell command, passes. The ledgers' append-only
+hashes, and Phase 4's integrity check, are what show it afterwards.
+
+Two bugs found on the way, both fixed with tests: the longest-match folder lookup compared the wrong
+tuple field, and the plugin's idle tick could record `idle_start` twice when `aem` was slow.
+
+Compatibility: the skill's `events.jsonl`, `approvals.jsonl` and labelled-cases formats are unchanged
+(no field was added or removed). Removed: `aem use --path` and `--fps`, the `AEM-G04` rule, and the
+stored `registry`/`fps` fields in `active.json`.

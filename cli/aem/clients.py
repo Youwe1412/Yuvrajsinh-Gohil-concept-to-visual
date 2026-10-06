@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from . import ledger
+from . import ledger, operator
 from .registry import Context, load_registry
 from .util import AemError, REPO_ROOT, expand, sha256_text, today, ts, write_json_atomic
 
@@ -16,6 +16,7 @@ SCOPES = ("channel", "video", "instance")
 # --- client-said -----------------------------------------------------------------------
 
 def client_said(ctx: Context, quote: str, *, scope: str, source: str, item: str | None = None) -> dict:
+    operator.assert_checked("client-said")
     """Add a dated, verbatim entry to the client's decisions file, marked as entered by the operator."""
     quote = quote.rstrip("\n")
     if not quote.strip():
@@ -77,6 +78,7 @@ def _allow_id(target: str, when: str) -> str:
 
 
 def allow(ctx: Context, target: str, reason: str, *, once: bool, inbox_ref: str | None = None) -> dict:
+    operator.assert_checked("allow")
     if not reason or not reason.strip():
         raise AemError("an override needs a reason")
     when = ts()
@@ -87,6 +89,7 @@ def allow(ctx: Context, target: str, reason: str, *, once: bool, inbox_ref: str 
 
 
 def revoke(ctx: Context, allow_id: str) -> dict:
+    operator.assert_checked("allow --revoke")
     if allow_id not in {a["allow_id"] for a in active_allows(ctx)}:
         raise AemError(f"no active allow {allow_id!r}")
     ledger.record(ctx, "allow_revoked", note=None, allow_id=allow_id, source="aem allow --revoke")
@@ -125,6 +128,7 @@ def _fill(text: str, values: dict) -> str:
 
 def new_client(registry_path: Path, client_id: str, *, name: str, design_system: str, projects_root: str,
                contact: str | None = None, skill: str | None = None, template: Path = TEMPLATE) -> dict:
+    operator.assert_checked("new-client")
     if not ID_RE.match(client_id):
         raise AemError(f"client id {client_id!r} must be 2-32 lowercase letters, digits or hyphens")
     reg = load_registry(registry_path)

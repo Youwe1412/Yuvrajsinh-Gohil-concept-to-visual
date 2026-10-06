@@ -9,12 +9,19 @@ alias or a script that touches a file is not seen.
 
 Rules
   AEM-G01  the agent writes a protected file (approvals, events, the client's decisions,
-           rules, labelled cases, AEM's own active-project file and registry)
-  AEM-G02  the agent reads or writes outside the active client's design system and projects,
+           rules, labelled cases, the registry, and the operator-nonce folder)
+  AEM-G02  the agent reads or writes outside the client's design system and projects,
            the AEM repo and shared tools
   AEM-G03  a command the client's registry entry blocks
-  AEM-G04  the agent runs an operator-only aem command (including inbox accept and dismiss)
   AEM-G05  a placement, FCPXML or delivery step names a render without a standing approval
+
+There is no AEM-G04 any more (the number is not reused). The operator-only aem commands (approve,
+reject, stage, ...) are refused by the CLI itself, at their entry, whoever spells them and however
+(see operator.py), so the guard no longer reads shell text for them: a commit message, a heredoc or a
+grep that mentions one is just text.
+
+The client's project comes from where the call runs (AEM_PROJECT, the plugin's session pin, or the
+call's working folder), never from stored state.
 """
 from __future__ import annotations
 
@@ -32,11 +39,9 @@ RULES = {
     "AEM-G01": "protected file",
     "AEM-G02": "outside the client's folders",
     "AEM-G03": "blocked command",
-    "AEM-G04": "operator-only aem command",
     "AEM-G05": "render not approved",
 }
 
-OPERATOR_ONLY = ("approve", "reject", "client-said", "allow", "use", "new-client", "stage", "guard", "codex-hook")
 WRITE_TOOLS = {"Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"}
 READ_TOOLS = {"Read": "file_path", "Glob": "path", "Grep": "path", "LS": "path"}
 
@@ -44,11 +49,6 @@ READ_TOOLS = {"Read": "file_path", "Glob": "path", "Grep": "path", "LS": "path"}
 SYSTEM_PATHS = ("/usr", "/bin", "/sbin", "/opt/homebrew", "/usr/local", "/System", "/Library/Developer",
                 "/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp", "/private/tmp",
                 "/var/folders", "/private/var/folders", "/Applications")
-
-AEM_CMD = re.compile(
-    r"(?:^|[\s;&|()`$])(?:\S*/)?(?:aem|bin/aem)\s+(?P<sub>[a-z-]+)"
-    r"|python3?\s+(?:-m\s+aem|\S*/cli/bin/aem)\s+(?P<sub2>[a-z-]+)"
-)
 
 DEFAULT_GATES = {
     "command_patterns": [r"\bfcpxml\b", r"\bplacement\b", r"\bplace\b", r"\bdeliver(?:y)?\b"],
@@ -167,20 +167,6 @@ def check(tool: str, args: dict, cwd: str | None, *, reg_path: str | None = None
 
 
 def _decide(ctx: Context | None, reg: dict, tool: str, args: dict, cwd: str | None) -> dict | None:
-    # AEM-G04 holds with or without an active project.
-    if tool == "Bash":
-        command = str(args.get("command") or "")
-        for m in AEM_CMD.finditer(command):
-            sub = m.group("sub") or m.group("sub2")
-            if sub == "inbox" and re.match(r"\s+(?:accept|dismiss)\b", command[m.end():]):
-                return _deny("AEM-G04", "`aem inbox accept` and `aem inbox dismiss` are the operator's commands, not the agent's.",
-                             "Ask the operator to answer it in the review inbox (/inbox).", command="inbox")
-            if sub in OPERATOR_ONLY:
-                slash = {"use": "/aem use", "new-client": "/aem new-client", "stage": "/stage, /pause, /resume or /wait",
-                         "guard": "nothing (the plugin runs it)",
-                         "codex-hook": "nothing (Codex runs it)"}.get(sub, f"/{sub}")
-                return _deny("AEM-G04", f"`aem {sub}` is the operator's command, not the agent's.",
-                             f"Ask the operator to type {slash}.", command=sub)
     # The operator-nonce folder is protected whatever the project (or none).
     if tool in WRITE_TOOLS and _under(_real(str(args.get(WRITE_TOOLS[tool]) or ""), cwd), [nonce_dir()]):
         return _deny("AEM-G01", f"{nonce_dir()} is protected: the plugin writes the operator's one-time nonces there.",

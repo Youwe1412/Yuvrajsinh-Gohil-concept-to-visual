@@ -16,7 +16,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import ledger
+from . import ledger, operator
 from .registry import Context
 from .util import AemError, CheckFailed, append_jsonl, read_jsonl, rel_to, sha256_file, sha256_text, strip_private, today, ts
 
@@ -154,6 +154,7 @@ def last_checked_render(ctx: Context, item: str) -> str | None:
 
 def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note=None, revision=None,
             row: str | None = None) -> dict:
+    operator.assert_checked("approve")
     if not path:
         path = last_checked_render(ctx, item)
         if not path:
@@ -205,6 +206,7 @@ def approve(ctx: Context, item: str, path: str | None, gate: str | None, *, note
 
 
 def reject(ctx: Context, item: str, reason: str, *, gate=None, path: str | None = None, row: str | None = None) -> dict:
+    operator.assert_checked("reject")
     """Reject an item: the file given (or, with row, one plan row), else the item's latest approved render."""
     if not reason or not reason.strip():
         raise AemError("a rejection needs a reason")

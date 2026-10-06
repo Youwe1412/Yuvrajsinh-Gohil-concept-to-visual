@@ -12,6 +12,7 @@ added after the skill's five. Every line is appended, never rewritten.
 from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
+from . import operator
 from .registry import Context
 from .util import AemError, append_jsonl, fmt_duration, now, parse_ts, read_jsonl, strip_private, ts
 
@@ -77,6 +78,7 @@ def current_stage(events: list[dict]) -> tuple | None:
 
 
 def stage(ctx: Context, action: str, args: list[str], *, note=None, at=None, extra=None, switch=False) -> dict:
+    operator.assert_checked("stage")
     events = read_events(ctx)
     opened = open_stages(events)
     extra = extra or {}

@@ -2,6 +2,7 @@
 import type { PluginOptions, ProcessRunInit, ProcessRunResult, PromptOrigin } from 'claude-code'
 
 import type { AemInbox, AemLedger, AemStatusParts, AemView } from '../types'
+import { sha256Hex } from './sha256'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
 export const PLUGIN_VERSION = '0.8.0'
@@ -15,6 +16,33 @@ export type AemResult = {
 }
 
 export type RunInit = { stdin?: string; timeoutMs?: number; json?: boolean; env?: Record<string, string> }
+
+// The aem commands only the operator runs. The CLI refuses them unless the operator is shown to be running
+// them (cli/aem/operator.py); this plugin is how a slash command shows it: a one-time nonce.
+const OPERATOR_COMMANDS: ReadonlySet<string> = new Set(['use', 'stage', 'approve', 'reject', 'client-said', 'allow', 'new-client'])
+
+export function isOperatorCommand(args: readonly string[]): boolean {
+  const [cmd, action] = args
+  if (cmd === undefined) return false
+  return OPERATOR_COMMANDS.has(cmd) || (cmd === 'inbox' && (action === 'accept' || action === 'dismiss'))
+}
+
+export const NONCE_TTL_MS = 60_000
+
+const hex = (bytes: Uint8Array): string => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+
+// A random one-time nonce. Only its SHA-256 is written, to <AEM_HOME>/nonces/<hash>, with an expiry; the nonce
+// itself goes to the one aem call in AEM_OPERATOR_NONCE and is never written, logged or shown.
+export async function makeNonce(io: Io): Promise<{ nonce: string } | { error: string }> {
+  try {
+    const nonce = hex(crypto.getRandomValues(new Uint8Array(32)))
+    const file = `${await io.aemHome()}/nonces/${sha256Hex(Uint8Array.from(nonce, c => c.charCodeAt(0)))}`
+    await io.writeFile(file, JSON.stringify({ expires_at: ((await io.now()) + NONCE_TTL_MS) / 1000 }))
+    return { nonce }
+  } catch (err) {
+    return { error: String(err) }
+  }
+}
 
 // The host's process runner, handed in by each feature as a closure over its own `$`
 // (the engine follows `$` only within the file that holds it).
@@ -161,6 +189,8 @@ export type CommandSpecLite = { name: string; description: string; argumentHint?
 export type Io = {
   run: ProcessRun
   home: () => Promise<string | undefined>
+  aemHome: () => Promise<string>
+  writeFile: (path: string, text: string) => Promise<void>
   toast: (text: string, timeoutMs?: number) => void
   status: (text: string | undefined) => void
   now: () => Promise<number>
@@ -183,7 +213,13 @@ export type Io = {
 // CLI resolves the same project the operator pinned; with no pin the CLI uses the session's working folder.
 export async function cli(io: Io, options: PluginOptions, args: readonly string[], init?: RunInit): Promise<AemResult> {
   const pin = await io.getPin()
-  const env = pin ? { AEM_PROJECT: pin, AEM_PROJECT_SOURCE: 'session-pin', ...init?.env } : init?.env
+  let env: Record<string, string> | undefined = pin ? { AEM_PROJECT: pin, AEM_PROJECT_SOURCE: 'session-pin', ...init?.env } : init?.env
+  // Every call here comes from a slash command the operator typed or from the plugin's own events, never from
+  // the model, so an operator command gets its one-time nonce. If it cannot be made the CLI refuses and says why.
+  if (isOperatorCommand(args)) {
+    const n = await makeNonce(io)
+    if ('nonce' in n) env = { ...env, AEM_OPERATOR_NONCE: n.nonce }
+  }
   return runAem(io.run, await io.home(), options, args, { ...init, env })
 }
 

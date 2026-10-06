@@ -46,13 +46,23 @@ export async function ledgerStart(io: Io, options: PluginOptions): Promise<void>
 
 // Every 30 s: idle starts once idle_minutes pass with no input and no running turn.
 // It is recorded when noticed, with the last activity's time as inactive_since.
+// A tick that is still waiting for `aem` (a nonce to write, a slow disk) must not be joined by the next one:
+// both would see no idle span open and record idle_start twice.
+let ticking = false
+
 export async function ledgerTick(io: Io, options: PluginOptions): Promise<void> {
-  const l = await io.getLedger()
-  const v = await io.getView()
-  if (!v.active || l.turnId !== null || l.idleSince !== null || l.lastActivity === 0) return
-  if ((await io.now()) - l.lastActivity < l.idleMinutes * 60_000) return
-  if (await auto(io, options, 'idle_start', ['--since', new Date(l.lastActivity).toISOString()])) {
-    await io.patchLedger(s => ({ ...s, idleSince: l.lastActivity }))
+  if (ticking) return
+  ticking = true
+  try {
+    const l = await io.getLedger()
+    const v = await io.getView()
+    if (!v.active || l.turnId !== null || l.idleSince !== null || l.lastActivity === 0) return
+    if ((await io.now()) - l.lastActivity < l.idleMinutes * 60_000) return
+    if (await auto(io, options, 'idle_start', ['--since', new Date(l.lastActivity).toISOString()])) {
+      await io.patchLedger(s => ({ ...s, idleSince: l.lastActivity }))
+    }
+  } finally {
+    ticking = false
   }
 }
 

@@ -39,7 +39,6 @@ class CodexHook(WorldCase):
         self.assertEqual((ev["event"], ev["agent"], ev["session"]), ("session_start", "codex", "codex-s1"))
 
     def test_bash_denials_match_the_plugin(self):
-        self.assertDenied(self.pre("Bash", {"command": "aem approve shot renders/a.mp4 --gate G4"}), "AEM-G04")
         self.assertDenied(self.pre("Bash", {"command": "echo x >> events.jsonl"}), "AEM-G01")
         self.assertDenied(self.pre("Bash", {"command": "npx hyperframes snapshot --describe ."}), "AEM-G03")
         self.assertEqual(self.pre("Bash", {"command": "ls renders"}), {})
@@ -84,12 +83,10 @@ class CodexHook(WorldCase):
         # The pending start time is consumed.
         self.assertFalse((self.w.home / "codex" / "pending" / "r1.json").exists())
 
-    def test_no_project_where_codex_runs_still_holds_operator_only_commands(self):
+    def test_no_project_where_codex_runs(self):
         here = {"cwd": str(self.w.tmp)}
         out = self.hook("SessionStart", source="startup", **here)
         self.assertIn("no project is resolved", out["hookSpecificOutput"]["additionalContext"])
-        self.assertDenied(self.hook("PreToolUse", turn_id="t1", tool_name="Bash", tool_use_id="c",
-                                    tool_input={"command": "aem stage start G1"}, **here), "AEM-G04")
         self.assertEqual(self.hook("PreToolUse", turn_id="t1", tool_name="Bash", tool_use_id="c",
                                    tool_input={"command": "ls"}, **here), {})
         self.assertEqual(self.w.events(), [])  # nothing is recorded without a project

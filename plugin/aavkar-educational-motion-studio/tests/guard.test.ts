@@ -3,12 +3,12 @@ import { describe, expect, test } from 'claude-code/testing'
 import { COMPOSER, INACTIVE, PRESENTATION, START, active, floor } from './fake-aem'
 import type { Reply, Router } from './fake-aem'
 
-// aem guard as the CLI answers it: deny Bash `aem approve` (G04) and writes to events.jsonl (G01).
+// aem guard as the CLI answers it: deny a placement of an unapproved render (G05) and writes to events.jsonl (G01).
 function guardReply(stdin: string | undefined): Reply {
   const req = JSON.parse(stdin ?? '{}') as { tool: string; input: { command?: string; file_path?: string }; cwd: string }
-  if (req.input.command?.includes('aem approve')) {
-    return { code: 1, json: { ok: true, decision: 'deny', rule: 'AEM-G04', rule_name: 'operator-only aem command',
-      reason: '`aem approve` is the operator\'s command, not the agent\'s.', how: 'Ask the operator to type /approve.' } }
+  if (req.input.command?.includes('place.py')) {
+    return { code: 1, json: { ok: true, decision: 'deny', rule: 'AEM-G05', rule_name: 'render not approved',
+      reason: 'renders/a.mp4 has no standing approval.', how: 'Review the render, then type /approve a.' } }
   }
   if (req.input.file_path?.endsWith('events.jsonl')) {
     return { code: 1, json: { ok: true, decision: 'deny', rule: 'AEM-G01', rule_name: 'protected file',
@@ -29,15 +29,15 @@ describe('guard', () => {
   test('a denied tool call never runs; the agent is told why and how; a toast shows', async ($, on) => {
     const w = floor(on, withGuard(active()))
     await $.session.start(START)
-    const r = await $.tool.call({ tool: 'Bash', command: 'aem approve shot renders/a.mp4 --gate G4' })
+    const r = await $.tool.call({ tool: 'Bash', command: 'python3 place.py renders/a.mp4' })
     expect(w.toolsRun).toEqual([])
-    expect(JSON.stringify(r)).toContain('AEM denied this call (AEM-G04, operator-only aem command)')
-    expect(JSON.stringify(r)).toContain('Ask the operator to type /approve.')
-    expect(w.toasts.at(-1)).toBe('AEM denied Bash: AEM-G04 operator-only aem command')
+    expect(JSON.stringify(r)).toContain('AEM denied this call (AEM-G05, render not approved)')
+    expect(JSON.stringify(r)).toContain('Review the render, then type /approve a.')
+    expect(w.toasts.at(-1)).toBe('AEM denied Bash: AEM-G05 render not approved')
     const g = w.calls.find(c => c[1] === 'guard')
     expect(g).toEqual(['aem', 'guard', '--json'])
     const sent = JSON.parse(w.stdins[w.calls.indexOf(g as string[])] ?? '{}')
-    expect(sent).toEqual({ tool: 'Bash', input: { command: 'aem approve shot renders/a.mp4 --gate G4' }, cwd: '/projects/P1' })
+    expect(sent).toEqual({ tool: 'Bash', input: { command: 'python3 place.py renders/a.mp4' }, cwd: '/projects/P1' })
   })
 
   test('protected write denied; ordinary edit allowed and run', async ($, on) => {
@@ -65,8 +65,8 @@ describe('guard', () => {
     // The view is refreshed on a timer and can lag a project made active elsewhere: the CLI decides.
     await $.tool.call({ tool: 'Read', file_path: '/anywhere/x.md' })
     expect(w.calls.filter(c => c[1] === 'guard').length).toBe(1)
-    const r = await $.tool.call({ tool: 'Bash', command: 'aem approve x y --gate G4' })
-    expect(JSON.stringify(r)).toContain('AEM-G04')
+    const r = await $.tool.call({ tool: 'Bash', command: 'python3 place.py renders/a.mp4' })
+    expect(JSON.stringify(r)).toContain('AEM-G05')
   })
 
   test('if aem cannot run, the call is allowed and a toast says it was not checked', async ($, on) => {

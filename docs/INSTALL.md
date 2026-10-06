@@ -38,7 +38,7 @@ aem --version
 aem status
 ```
 
-`aem status` should say no project is active.
+Run from anywhere that is not a registered project's folder, `aem status` should say no project is resolved.
 
 ## 3. Register your clients
 
@@ -52,8 +52,11 @@ aem new-client acme --name "Acme Learning" --design-system "/path/to/00 - Acme D
 
 It scaffolds the decisions file, rules file, critic file and text folder into an empty design-system
 folder and adds the registry entry. Use another registry file with `--registry FILE` or the
-`AEM_REGISTRY` environment variable. AEM keeps its own state (the active project, Codex's pending
-calls) in `~/.aem`; set `AEM_HOME` to move it.
+`AEM_REGISTRY` environment variable. AEM keeps little state in `~/.aem`: a last-used hint (nothing
+trusts it), the one-time operator nonces the plugin writes (`nonces/`), and Codex's pending calls;
+set `AEM_HOME` to move it. The project a command acts on is never stored there: it comes from the
+folder you work in (register each project under `projects` in the registry), `AEM_PROJECT`, or the
+plugin's session pin.
 
 Add every folder your tools need outside the client's own folders to `shared_paths`, or the guard
 will deny reaching them (AEM-G02). The default list covers this repository, `~/.aem`, Claude Code's
@@ -82,7 +85,7 @@ claude plugin install aavkar-educational-motion-studio@aavkar-productions
 ```
 
 Tested on 6 October 2026 with Claude Code 2.1.288 in an isolated config folder: the marketplace
-added, the plugin installed (version 0.7.0) and enabled, and `/aem status` answered from the
+added, the plugin installed (version 0.7.0 then) and enabled, and `/aem status` answered from the
 installed copy.
 
 ### Plugin settings
@@ -125,8 +128,8 @@ start Codex and review the hooks with `/hooks`: Codex runs a non-managed hook on
 it, and asks again whenever it changes.
 
 What was verified: with Codex 0.146.0, this exact TOML (passed with `-c` overrides) ran the
-SessionStart hook (AEM's context reached the model) and the PreToolUse hook blocked an agent's
-`aem approve` (AEM-G04). A project-level `<repo>/.codex/hooks.json` was not picked up by
+SessionStart hook (AEM's context reached the model) and an agent's `aem approve` was refused by the
+`aem` command itself (Codex's shell has no terminal and no operator nonce), with no hook involved. A project-level `<repo>/.codex/hooks.json` was not picked up by
 `codex exec` in that test, so install the hooks at user level. Re-check after a Codex upgrade:
 
 ```bash
@@ -139,20 +142,37 @@ never touches `~/.codex`.
 ## 7. Check the install
 
 ```bash
-python3 -m unittest discover -s tests -t tests
+tests/run.sh
 ```
+
+It runs the CLI and plugin tests against a sandbox and fails if `~/.aem` or `registry/clients.json`
+changed during the run.
 
 ```bash
 aem drift --client joel
 ```
 
-In Claude Code, `/aem status` should answer, and after `/aem use <client>/<project>` the status line
-shows `AEM · <client> · <project> · …`.
+Start Claude Code in a registered project's folder: you should get one toast, `AEM 0.8.0 ·
+<client>/<project> · resolved from folder`, and the status line shows `AEM · <client> · <project> · …`.
+No toast means the plugin is not loaded in that session. `/aem status` answers either way once it is.
 
 ## Updating and removing
 
-Pull the repository; the command updates at once (it is a link). For the plugin, `/plugin
-marketplace update aavkar-productions` and reinstall. Remove the plugin with `/plugin uninstall
+Pull the repository; the command updates at once (it is a link). **The plugin does not**, and since
+0.8.0 the two must match: the CLI refuses operator commands (`/stage`, `/approve`, the plugin's own
+automatic ledger events, ...) unless the plugin gives them a one-time nonce, which only 0.8.0 and later
+does. An older plugin therefore has its slash commands and ledger events refused (the toast and the
+command's reply say "operator's command … no operator nonce"). Update it, then start new sessions:
+
+```bash
+claude plugin marketplace update aavkar-productions
+```
+
+```bash
+claude plugin update aavkar-educational-motion-studio@aavkar-productions
+```
+
+`claude plugin list` should then say version 0.8.0. Remove the plugin with `/plugin uninstall
 aavkar-educational-motion-studio@aavkar-productions`, the command by deleting the
 `~/.local/bin/aem` link, and the Codex hooks by deleting AEM's `[hooks]` entries. AEM's ledgers live
 in the projects and stay.

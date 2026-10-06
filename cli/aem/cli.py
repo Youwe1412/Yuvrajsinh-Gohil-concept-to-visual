@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, codex, context, drift, guard, inbox, ledger, registry, render, review, sentinel
+from . import VERSION, approvals, clients, codex, context, drift, guard, inbox, ledger, operator, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -490,6 +490,7 @@ def main(argv=None) -> int:
         ap.print_help()
         return 2
     try:
+        operator.require(a.cmd, getattr(a, "action", None) if a.cmd == "inbox" else None)
         data, text = COMMANDS[a.cmd](a)
         if as_json:
             print(json.dumps({"ok": True, **data} if "ok" not in data else data, ensure_ascii=False, default=_jsonable))

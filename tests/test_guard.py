@@ -58,24 +58,29 @@ class Guard(WorldCase):
         d = self.assertDenied("AEM-G03", "Bash", command="npx hyperframes snapshot --describe .")
         self.assertIn('/allow "snapshot --describe"', d["how"])
 
-    # AEM-G04
-    def test_operator_only_aem_commands(self):
-        for c in ("aem approve shot renders/a.mp4 --gate G4", "aem reject shot --reason x",
-                  "echo hi | aem client-said --scope video --source x", "aem allow AEM-G01 --reason x",
-                  "aem use acme/P1", "aem stage start G1", "~/.local/bin/aem stage auto prompt",
-                  "cd cli && python3 -m aem approve shot x --gate G4", "aem new-client b --name B",
-                  "aem guard < req.json"):
-            self.assertDenied("AEM-G04", "Bash", command=c)
-        self.assertAllowed("Bash", command="aem check-render renders/a.mp4")
-        self.assertDenied("AEM-G04", "Bash", command="aem inbox accept comment:x#1 --ruling keep")
-        self.assertDenied("AEM-G04", "Bash", command="aem inbox dismiss denial:3 --reason no")
-        self.assertAllowed("Bash", command="aem inbox")
+    # No AEM-G04: the CLI refuses operator-only commands itself (tests/test_operator.py), so the guard
+    # does not read shell text for them. Regression (6 Oct 2026): a commit message or a heredoc that
+    # mentioned one was denied, which stopped ordinary work.
+    def test_text_that_only_mentions_an_operator_command_is_just_text(self):
+        for c in ('git commit -m "explain aem approve and aem stage"',
+                  "grep -rn 'aem approve' docs/",
+                  "echo 'run aem allow AEM-G01 --reason x yourself' > notes.txt",
+                  "cat <<'EOF' > docs/note.md\nOperators type aem approve shot renders/a.mp4 --gate G4.\nEOF",
+                  "aem approve shot renders/a.mp4 --gate G4",  # the guard lets it through: the CLI refuses it
+                  "python3 -m aem stage start G1"):
+            self.assertAllowed("Bash", command=c)
 
-    def test_g04_holds_with_no_project_resolved(self):
-        code, d = self.guard("Bash", cwd=str(self.w.tmp), command="aem approve x y --gate G4")
-        self.assertEqual((code, d["rule"]), (1, "AEM-G04"))
+    def test_no_project_resolved_means_no_scope(self):
         code, d = self.guard("Read", cwd=str(self.w.tmp), file_path="/Volumes/Other Client/secret.md")
         self.assertEqual((code, d["decision"]), (0, "allow"))
+
+    def test_the_operator_nonce_folder_is_protected_from_write_and_edit_with_or_without_a_project(self):
+        f = self.w.home / "nonces" / ("0" * 64)
+        for cwd in (str(self.w.project), str(self.w.tmp)):
+            for tool, args in (("Write", {"content": "x"}), ("Edit", {"old_string": "a", "new_string": "b"})):
+                code, d = self.guard(tool, cwd=cwd, file_path=str(f), **args)
+                self.assertEqual((code, d["decision"], d["rule"]), (1, "deny", "AEM-G01"), (cwd, tool))
+        self.assertAllowed("Read", file_path=str(self.w.home / "nonces"))  # reading the folder is not writing it
 
     # AEM-G05
     def test_placement_needs_standing_approval(self):

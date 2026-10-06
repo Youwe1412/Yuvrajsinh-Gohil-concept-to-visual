@@ -36,6 +36,8 @@ function io($: EngineInterface): Io {
   return {
     run: (argv, init) => $.process.run(argv, init),
     home: () => $.env.get('HOME'),
+    aemHome: async () => (await $.env.get('AEM_HOME')) ?? `${(await $.env.get('HOME')) ?? ''}/.aem`,
+    writeFile: (path, text) => $.fs.write(path, text),
     toast: (text, timeoutMs) => $.ui.toast(text, timeoutMs === undefined ? undefined : { timeoutMs }),
     status: text => $.ui.status(text),
     now: () => $.clock.now(),

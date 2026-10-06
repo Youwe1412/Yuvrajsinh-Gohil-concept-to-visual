@@ -49,7 +49,7 @@ stops the common mistakes; it does not stop a determined person. Each guard's ex
 | `.claude-plugin/marketplace.json` | Makes this repository a Claude Code plugin marketplace (`aavkar-productions`) |
 | `registry/` | `clients.json` and `client-template/`, the files a new client needs |
 | `docs/` | `ABOUT.md` (the whole picture), `INSTALL.md`, `OPERATOR.md`, `CLI.md` |
-| `tests/` | CLI unit tests; `acceptance/` (the end-to-end run's operator steps and placement stand-in); `live/codex-hooks-check.sh` |
+| `tests/` | CLI unit tests; `acceptance/` (the end-to-end run's operator steps and placement stand-in); `live/codex-hooks-check.sh`, `live/tty-probe.py` |
 
 ## Tests
 

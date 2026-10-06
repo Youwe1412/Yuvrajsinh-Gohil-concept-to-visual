@@ -6,21 +6,41 @@ the agent. These are the moments where you act.
 
 ## The idea in five lines
 
-- One **active project** at a time. Everything AEM records goes into that project's
-  `events.jsonl` and `approvals.jsonl`.
+- A session works on **one project, the one it runs in**. Everything AEM records goes into that
+  project's `events.jsonl` and `approvals.jsonl`. There is no global "active project" to forget to
+  clear: the project comes from the folder you start in, or is pinned to one session with `/aem use`.
 - Work moves through the client's **gates** (Joel's: G1 Inputs … G7 Joel's review). You open and
   close stages; AEM times them.
 - An **approval** covers one exact render: its SHA-256. Change one byte and the approval is
   **stale**: placement and delivery refuse it until you approve again.
 - Only **you** write the client's records: their words, approvals, rejections, overrides and the
-  critic's labelled cases. The agent can read them but not write them, and is told so.
+  critic's labelled cases. The agent can read them but not write them, and is told so. The `aem`
+  command itself refuses those commands unless you are the one running them (see below).
 - Every check is a **recorded check, not a security boundary** (the limits are at the end).
 
 ## Starting a session
 
+**Start Claude Code in the project's folder** (for P2: `…/Joel Belton - MergeToMaster/P2 - Claude Code`).
+AEM finds the project from where the session runs, so there is nothing to type. At the start of every
+session you get one toast:
+
+```text
+AEM 0.8.0 · joel/P2 · resolved from folder
+AEM 0.8.0 · no project (folder not registered)
+```
+
+**No toast means the plugin is not loaded in that session** (not installed, disabled, or an older
+version): nothing is guarded, timed or recorded, and `/aem`, `/stage` and `/approve` will not exist.
+Fix that first. If you started somewhere else, pin the project to this one session:
+
 ```text
 /aem use joel/P2
 ```
+
+`/aem use --clear` drops the pin (the session goes back to its folder); other sessions and the
+terminal are untouched. In a terminal, `AEM_PROJECT=joel/P2 aem status` does the same for one command.
+`aem status` always says which project, which folder, which design system and frame rate, and *how* it
+was resolved (environment, session pin, folder, flag or none).
 
 The status line then reads, for example:
 
@@ -29,14 +49,17 @@ AEM · MergeToMaster · P2 - Prompt Engineering · G4 fd_S01_next-token · 0:42 
 ```
 
 That is: client · project · open gate and scene · time in that stage (`paused` or `waiting on joel`
-when it is) · approvals made stale by a later render. With no project active the agent is told AEM
-is loaded but idle, and only the operator-only-command guard applies. `/aem status` prints the
-full state; `/aem use` also warns if the design system's text exports or the installed skill have
-drifted from their masters.
+when it is) · approvals made stale by a later render. With no project resolved the agent is told AEM
+is loaded but idle, and nothing is guarded. `/aem status` prints the full state; `/aem use` also warns
+if the design system's text exports or the installed skill have drifted from their masters.
+
+A project in a temporary folder (`/tmp`, `/private/tmp`) or outside the client's folders is refused
+with the reason: those are test copies, and only the test sandbox may use them.
 
 The project's frame rate is read, never assumed (`aem.project.json`, the edit's FCPXML,
 `data/words.json` or the HyperFrames `frame.md`); if they disagree, `/aem use` refuses and says
-where. Give it with `--fps 24000/1001` when the project states none.
+where. When the project states none, write it into the project's `aem.project.json`
+(`"fps": "25/1"`), read from the edit itself. There is no `--fps` override.
 
 ## Time per gate
 
@@ -113,28 +136,42 @@ The agent sees which rule, why, and what you can do; you get a toast. The rules:
 
 | Rule | Blocks | You can |
 |---|---|---|
-| AEM-G01 protected file | writing the ledgers, the decisions file, the rules file, the critic's file, AEM's own state or the registry | run the matching command yourself, or `/allow AEM-G01 <reason>` |
+| AEM-G01 protected file | writing the ledgers, the decisions file, the rules file, the critic's file, the registry or the operator-nonce folder | run the matching command yourself, or `/allow AEM-G01 <reason>` |
 | AEM-G02 outside the client's folders | reading or writing outside the client's design system and projects, the AEM repository and the registry's shared tools | `/allow AEM-G02 <reason>`, or add the folder to `shared_paths` |
 | AEM-G03 blocked command | a command the registry blocks for the client (Joel: `snapshot --describe`) | `/allow "snapshot --describe" <reason>` |
-| AEM-G04 operator-only command | the agent running `aem approve`, `reject`, `client-said`, `allow`, `use`, `new-client`, `stage`, `inbox accept`/`dismiss` or the hook commands | run it yourself |
 | AEM-G05 render not approved | placement, FCPXML or delivery naming a render without a standing approval | review, then `/approve` |
 
 `/allow` is one-time by default (used up by the next matching call); add `--standing` to keep it
 until `aem allow --revoke ID`. Every denial, allow and use is recorded in `events.jsonl`.
 
-The guards read shell commands as text. They miss a path built at run time or a script that does
-the work, and they over-match: a command that only mentions a protected file or an operator
-command (a heredoc, a commit message) is blocked too. The agent is told to use the Read tool to
-read protected files and the Edit tool for documents; if a harmless command is blocked, `/allow`
-it once. If `aem` cannot run at all, the plugin lets calls through and shows a toast every time:
+The guards read shell commands as text for the files and folders they protect. They miss a path
+built at run time or a script that does the work, and they over-match: a command that only mentions
+a protected file (a heredoc, a commit message) is blocked too. The agent is told to use the Read tool
+to read protected files and the Edit tool for documents; if a harmless command is blocked, `/allow`
+it once. (There is no longer a rule that reads text for *operator commands*: see the next section.) If `aem` cannot run at all, the plugin lets calls through and shows a toast every time:
 fix the install rather than ignore it.
+
+## Why the agent cannot approve its own work
+
+`approve`, `reject`, `client-said`, `allow`, `stage`, `use`, `new-client` and `inbox accept`/`dismiss`
+are **refused by the `aem` command itself** unless you are the one running them: from your own
+Terminal (a real terminal, not under an AI agent), or through the plugin's slash command, which hands
+that one call a one-time nonce that lasts 60 seconds. It does not matter how the agent spells the command
+or what script it wraps it in. The old guard rule that matched the text of a command is gone, so a
+commit message or a heredoc that mentions `aem approve` is just text.
+
+This is cooperative, not a lock. A determined agent could strip the markers that tell `aem` it is an
+agent and fake a terminal, or write a nonce file with a shell command. The ledgers are append-only with
+hashes, so what it did shows. The details and the experiments behind this are in
+[CLI.md](CLI.md#operator-only-commands).
 
 ## Codex
 
 With the hooks installed (INSTALL.md), Codex gets the same context, guards, render checks and time
 events. There are no slash commands, toasts, status line or inbox in Codex: run the commands in
 your terminal (`aem use joel/P2`, `aem stage start G4 fd_S01_next-token`, `aem approve …`,
-`aem client-said --scope video --source … < words.txt`, `aem allow …`, `aem inbox`, `aem report`).
+`aem client-said --scope video --source …` and then type or paste the words and press Control-D,
+`aem allow …`, `aem inbox`, `aem report`). Start Codex in the project's folder so it resolves the project.
 Idle time is not detected live in Codex (it has no timer); gaps show in the report as unobserved.
 
 ## New client
@@ -152,8 +189,10 @@ time) and the client's rules and decisions files. Nothing else needs to change.
 |---|---|
 | Toast "AEM guard could not run" | `aem` is missing or broken: `aem --version`, then `cli/install.sh` |
 | The status line lags a change made elsewhere | it re-reads `aem status` every 30 seconds; guards and render checks always ask the CLI directly, so they never lag |
+| No "AEM 0.8.0 · …" toast at session start | the plugin is not loaded in that session; check `claude plugin list` |
 | A drift toast after `/aem use` | `aem drift` lists it: re-run the design system's text export, or reinstall the skill from its master |
 | Codex does not block anything | check `/hooks` in Codex (hooks need your trust), then `tests/live/codex-hooks-check.sh` |
-| Done for the day | `/stage end`, then `/aem use --clear` if you want no project active |
+| Slash commands refused: "operator's command … no operator nonce" | the plugin is older than the CLI (0.7.x cannot make nonces): update it (INSTALL.md, "Updating") and start a new session |
+| Done for the day | `/stage end`. Nothing needs clearing: the next session resolves from its own folder |
 
 Every command, file format and limit is in [CLI.md](CLI.md).

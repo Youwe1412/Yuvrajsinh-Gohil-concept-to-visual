@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import timedelta
 from pathlib import Path
 
-from . import approvals, ledger
+from . import approvals, ledger, operator
 from .registry import Context
 from .util import AemError, append_jsonl, now, parse_ts, read_jsonl, rel_to, sha256_file, today, ts
 
@@ -238,6 +238,7 @@ def _find(ctx: Context, ref: str) -> dict:
 
 
 def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | None = None) -> dict:
+    operator.assert_checked("inbox accept")
     """Accept an imported client comment as the client's ruling on the shot."""
     if ruling not in RULINGS:
         raise AemError(f"ruling must be one of {', '.join(RULINGS)}")
@@ -269,6 +270,7 @@ def accept(ctx: Context, ref: str, ruling: str, *, label: bool, reason: str | No
 
 
 def dismiss(ctx: Context, ref: str, reason: str, *, label: bool) -> dict:
+    operator.assert_checked("inbox dismiss")
     """Close a denial or a client comment without approving it, with a reason."""
     if not reason or not reason.strip():
         raise AemError("dismissing needs a reason")
