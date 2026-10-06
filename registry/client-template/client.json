@@ -110,5 +110,9 @@
     "note_window_s": 1.0,
     "direction": {},
     "summary": "How {{CONTACT}} reviews: what they see (the finished video or each animation), where approval, timestamped notes and other feedback arrive, and whether they see the process."
+  },
+  "evidence": {
+    "rules": {},
+    "max_per_command": 6
   }
 }

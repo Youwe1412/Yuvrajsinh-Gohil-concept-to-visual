@@ -20,7 +20,7 @@ import re
 import shlex
 from pathlib import Path
 
-from . import approvals, render
+from . import approvals, evidence, render
 from .registry import Context
 from .util import AemError, CheckFailed, rel_to
 
@@ -131,6 +131,7 @@ def rendered(ctx: Context, command: str, cwd: str | None, started_at: float | No
         skipped = [str(p) for p in paths[:-cfg["max_outputs"]]]
         paths, hows = paths[-cfg["max_outputs"]:], hows[-cfg["max_outputs"]:]
     outputs = []
+    evid, evid_cfg = [], evidence.settings(ctx)
     for p, how in zip(paths, hows):
         try:
             r = render.check_render(ctx, str(p))
@@ -139,6 +140,11 @@ def rendered(ctx: Context, command: str, cwd: str | None, started_at: float | No
                                                           "failures": [exc.message]}
         except AemError as exc:
             r = {"ok": False, "result": "error", "path": str(p), "failures": [exc.message]}
+        if r.get("checks") and len(evid) < int(evid_cfg.get("max_per_command", 6)):
+            try:
+                evid.append(evidence.build(ctx, str(p), facts=r))
+            except (AemError, OSError) as exc:
+                evid.append({"ok": False, "path": str(p), "error": getattr(exc, "message", str(exc))})
         outputs.append({"path": r.get("path") or str(p), "scene": r.get("scene"), "result": r.get("result"),
                         "found_by": how, "failures": r.get("failures") or [],
                         "flashes": [f for f in r.get("flashes", []) if f.get("severity") == "fail"],
@@ -148,8 +154,18 @@ def rendered(ctx: Context, command: str, cwd: str | None, started_at: float | No
     failed = len(outputs) - passed
     stale = approvals.summary(ctx)["stale"]
     out = {"render": True, "pattern": pattern, "exit_code": exit_code, "outputs": outputs, "passed": passed,
-           "failed": failed, "stale": stale, "skipped": skipped, "inferred": inferred}
+           "failed": failed, "stale": stale, "skipped": skipped, "inferred": inferred, "evidence": evid,
+           "evidence_toasts": [e["toast"] for e in evid if e.get("ok")]}
     out["toast"], out["text"] = _texts(out)
+    done = [e for e in evid if e.get("ok")]
+    if done:
+        out["text"] += ("\nEvidence (give a critic subagent the evidence.md alone; it names every image):\n"
+                        + "\n".join(f"- {e['evidence_md']} ({e['poses']} poses, "
+                                     + (f"sync max offset {e['max_abs_offset_frames']}f" if e['max_abs_offset_frames'] is not None
+                                        else "sync not measured") + f", {e['seconds']} s)" for e in done))
+    if len(outputs) > len(evid):
+        out["text"] += (f"\n{len(outputs) - len(evid)} render(s) have no evidence (more than "
+                        f"{evid_cfg.get('max_per_command', 6)} in one command): run `aem evidence <path>` for the ones to review.")
     if inferred:
         out["toast"] += f" · {inferred['gate']} inferred (no stage was open)"
     return out

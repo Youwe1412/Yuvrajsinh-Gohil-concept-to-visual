@@ -12,7 +12,8 @@ function renderedReply(stdin: string | undefined): Reply {
   if (req.probe_only) return { json: { ok: true, render: true, outputs: [], text: '' } }
   return { json: { ok: true, render: true, passed: 0, failed: 1, stale: 1,
     toast: 'AEM render check FAIL: a_v02.mp4: flash at frame 10 (00:00:00:10), 1 frame(s); 1 approval(s) now stale',
-    text: 'AEM checked 1 render(s) this command wrote:\n- FAIL renders/a_v02.mp4 (a)' } }
+    evidence_toasts: ['evidence ready: a v02, sync max offset 2f, FLASH at frame 10'],
+    text: 'AEM checked 1 render(s) this command wrote:\n- FAIL renders/a_v02.mp4 (a)\nEvidence (give a critic subagent the evidence.md alone; it names every image):\n- reviews/a/v02/evidence.md (4 poses, sync max offset 2f, 1.2 s)' } }
 }
 
 const withRendered = (base: Router): Router => (args, stdin) =>
@@ -33,7 +34,10 @@ describe('render sentinel', () => {
       command: 'npx hyperframes render . -o renders/a_v02.mp4', cwd: '/projects/P1', started_at: NOW / 1000, exit_code: 0,
     })
     expect(w.toasts).toContain('AEM render check FAIL: a_v02.mp4: flash at frame 10 (00:00:00:10), 1 frame(s); 1 approval(s) now stale')
-    expect('context' in r ? r.context : undefined).toEqual(['AEM checked 1 render(s) this command wrote:\n- FAIL renders/a_v02.mp4 (a)'])
+    expect(w.toasts).toContain('evidence ready: a v02, sync max offset 2f, FLASH at frame 10')
+    const note = 'context' in r ? r.context : undefined
+    expect(note?.[0]).toContain('AEM checked 1 render(s) this command wrote:\n- FAIL renders/a_v02.mp4 (a)')
+    expect(note?.[0]).toContain('reviews/a/v02/evidence.md') // the evidence path is in the render's tool result
     // The status line is redrawn after the check, so its stale count is current.
     expect(w.calls.slice(i + 1).some(c => c[1] === 'status')).toBe(true)
   })
@@ -99,6 +103,6 @@ describe('render sentinel', () => {
     expect(w.statuses.at(-1)).not.toContain('stale')
     await $.tool.call({ tool: 'Bash', command: 'npx hyperframes render . -o renders/a_v02.mp4' })
     expect(w.statuses.at(-1)).toContain('· 1 stale')
-    expect(w.toasts.at(-1)).toContain('1 approval(s) now stale')
+    expect(w.toasts.some(t => t.includes('1 approval(s) now stale'))).toBe(true)
   })
 })

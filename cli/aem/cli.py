@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, clients, codex, context, doctor, drift, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, sentinel
+from . import VERSION, approvals, clients, codex, context, doctor, drift, evidence, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -116,6 +116,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path")
     p.add_argument("--item")
     p.add_argument("--no-record", action="store_true", help="check only; write nothing")
+    _common(p)
+
+    p = sub.add_parser("evidence", help="images, sync and facts a critic can read, for one render (or --video: the cut per moment)")
+    p.add_argument("path", help="a render, or with --video the assembled cut")
+    p.add_argument("--moment", help="the moment it renders (default: from the file name)")
+    p.add_argument("--cue", action="append", default=[], metavar="WORD_ID", help="a cue word (repeatable)")
+    p.add_argument("--cue-at", action="append", default=[], type=float, metavar="SECONDS",
+                   help="a cue word's onset, seconds into the render (repeatable; for hand-measured onsets)")
+    p.add_argument("--video", action="store_true", help="the path is the assembled cut: one contact sheet per moment")
+    p.add_argument("--offset", type=float, default=0.0, help="(--video) seconds to add to timeline times")
     _common(p)
 
     p = sub.add_parser("import-review", help="map a Frame.io comments CSV to shots and word IDs")
@@ -416,6 +426,16 @@ def _render_text(r: dict) -> str:
     return "\n".join(lines)
 
 
+def cmd_evidence(a):
+    ctx = registry.context(a)
+    if a.video:
+        r = evidence.video(ctx, a.path, offset_s=a.offset)
+        return r, (f"{r['sheets']} moment sheets in {r['dir']} ({r['seconds']} s); read {r['video_md']}"
+                   + (f"\n  no sheet for: {', '.join(r['skipped'])}" if r["skipped"] else ""))
+    r = evidence.build(ctx, a.path, moment=a.moment, cue_at=a.cue_at, cue_ids=a.cue)
+    return r, f"{r['toast']} · {r['poses']} poses · {r['seconds']} s\n  {r['evidence_md']}"
+
+
 def cmd_moments(a):
     ctx = registry.context(a)
     index = moments.build(ctx)
@@ -534,7 +554,7 @@ def cmd_new_client(a):
 
 COMMANDS = {
     "use": cmd_use, "status": cmd_status, "context": cmd_context, "recall": cmd_recall, "stage": cmd_stage,
-    "report": cmd_report, "moments": cmd_moments, "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
+    "report": cmd_report, "moments": cmd_moments, "evidence": cmd_evidence, "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
     "check-approval": cmd_check_approval, "check-render": cmd_check_render, "import-review": cmd_import_review,
     "integrity": cmd_integrity, "accept-edit": cmd_accept_edit, "doctor": cmd_doctor, "drift": cmd_drift, "observe": cmd_observe,
     "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,

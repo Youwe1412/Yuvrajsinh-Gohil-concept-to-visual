@@ -152,6 +152,31 @@
           "G6"
         ]
       },
+      "evidence": {
+        "rules": {
+          "sync": [
+            "M-03"
+          ],
+          "phone": [
+            "B-T1-03"
+          ],
+          "flash": [
+            "B-T1-01",
+            "M-T1-01",
+            "M-26"
+          ],
+          "motion": [
+            "M-T1-03"
+          ],
+          "contract": [
+            "M-18"
+          ],
+          "critic": [
+            "M-19"
+          ]
+        },
+        "max_per_command": 6
+      },
       "review_profile": {
         "unit": "whole video",
         "approval_channel": "Frame.io",

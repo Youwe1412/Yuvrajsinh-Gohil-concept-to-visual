@@ -94,7 +94,8 @@ class CodexHook(WorldCase):
         text = out["hookSpecificOutput"]["additionalContext"]
         self.assertIn("AEM checked 1 render(s)", text)
         self.assertIn("renders/a_v01.mp4", text)
-        self.assertEqual([e["event"] for e in self.w.events()][-1], "render_check")
+        self.assertEqual([e["event"] for e in self.w.events()][-2:], ["render_check", "evidence"])
+        self.assertIn("reviews/a/v01/evidence.md", text)  # Codex's agent reads the evidence path too
         self.assertIn("stage_inferred", [e["event"] for e in self.w.events()])  # no stage was open: G4 inferred
         # The pending start time is consumed.
         self.assertFalse((self.w.home / "codex" / "pending" / "r1.json").exists())

@@ -1,7 +1,8 @@
 // Feature "render sentinel": after a shell call finishes, `aem rendered` decides whether it was
-// a render, finds the files it wrote and runs `aem check-render` on each. The operator gets a
-// toast, the agent reads the result after the command's output, and the status line's stale
-// approval count is redrawn.
+// a render, finds the files it wrote, runs `aem check-render` on each and builds its evidence
+// (`aem evidence`: poses, phone crops, a strip, sync, facts and evidence.md). The operator gets a
+// toast per check and per evidence, the agent reads the result and the evidence.md paths after the
+// command's output, and the status line's stale approval count is redrawn. Advisory: never blocks.
 import type { PluginOptions } from 'claude-code'
 
 import { cli, errorOf, refresh } from './aem'
@@ -10,7 +11,7 @@ import type { Io } from './aem'
 // A render check scans every frame; a batch of 4K renders can take minutes.
 export const SENTINEL_TIMEOUT_MS = 600_000
 
-type Rendered = { render?: boolean; toast?: string; text?: string; failed?: number }
+type Rendered = { render?: boolean; toast?: string; text?: string; failed?: number; evidence_toasts?: string[] }
 
 // Every Bash call is watched: the CLI knows whether a project is active (the plugin's view can lag).
 export async function sentinelBefore(io: Io, tool: string): Promise<number | undefined> {
@@ -43,6 +44,7 @@ export async function sentinelAfter(io: Io, options: PluginOptions, args: Record
   }
   if (!d.render) return undefined
   if (d.toast) io.toast(d.toast, d.failed ? 12000 : 6000)
+  for (const t of d.evidence_toasts ?? []) io.toast(t, 8000)
   await refresh(io, options)
   return d.text || undefined
 }
