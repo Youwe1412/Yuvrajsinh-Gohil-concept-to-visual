@@ -1,0 +1,46 @@
+{
+  "id": "{{CLIENT_ID}}",
+  "name": "{{CLIENT_NAME}}",
+  "contact": "{{CONTACT}}",
+  "design_system": "",
+  "projects_root": "",
+  "projects": {},
+  "decisions_file": "{{CLIENT_ID}}-decisions.md",
+  "decisions_order": "newest_first",
+  "decision_scopes": ["channel", "video", "instance"],
+  "rules_file": "rules.md",
+  "preference_prefix": "C",
+  "labelled_cases_file": "critic/labelled-cases.jsonl",
+  "text_dirs": ["text"],
+  "skill": "{{SKILL}}",
+  "skill_master": "Skill/{{SKILL}}",
+  "rule_id_pattern": "\\b[A-Z]{1,2}(?:-T\\d)?-\\d{2}\\b",
+  "gates": {
+    "G1": "Inputs",
+    "G2": "Plan",
+    "G3": "Stills",
+    "G4": "Rough render",
+    "G5": "Critique and repair",
+    "G6": "Deliver",
+    "G7": "Client review"
+  },
+  "waiting_on_client_ids": ["{{CLIENT_ID}}"],
+  "protected_files": {
+    "design_system": [
+      "{{CLIENT_ID}}-decisions.md",
+      "rules.md",
+      "critic/labelled-cases.jsonl"
+    ],
+    "project": [
+      "approvals.jsonl",
+      "events.jsonl"
+    ]
+  },
+  "blocked_commands": [],
+  "review_inbox": {
+    "service": "Frame.io",
+    "import": "csv"
+  },
+  "audio_libraries": [],
+  "idle_minutes": 10
+}

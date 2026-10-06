@@ -1,0 +1,5 @@
+[
+  {"kind": "teaching", "name": "teach-opening", "start": 0, "duration": 6.25, "variables": {"which": "opening"}},
+  {"kind": "next-token", "name": "next-token", "start": 127.542208, "duration": 5.457792, "variables": {}},
+  {"kind": "statistical-middle", "name": "statistical-middle", "start": 140.0, "duration": 5.0, "variables": {}}
+]

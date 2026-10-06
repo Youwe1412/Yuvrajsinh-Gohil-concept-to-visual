@@ -1,0 +1,92 @@
+{
+  "_comment": "Aavkar Educational Motion Studio (AEM) client registry. Everything client-specific lives here; the aem CLI and the plugin hardcode no client. Paths may use ~. protected_files are relative to the client's design_system or to the active project folder. Add a client with: aem new-client <id>.",
+  "version": 1,
+  "operator": {
+    "id": "yuvraj",
+    "name": "Yuvraj"
+  },
+  "shared_paths": [
+    "~/Documents/Aavkar Educational Motion Studio",
+    "~/.aem",
+    "~/.claude/skills",
+    "~/.claude/plugins",
+    "~/.claude/dev-mods",
+    "~/Tools/fcp-edit-workflow",
+    "~/Documents/Aavkar Cut Assist",
+    "~/.npm-global/lib/node_modules/hyperframes",
+    "~/.cache/hyperframes"
+  ],
+  "clients": [
+    {
+      "id": "joel",
+      "name": "MergeToMaster",
+      "contact": "Joel Belton",
+      "design_system": "/Volumes/T7 Red/Yuvraj Folder/Freelance Work/Joel Belton - MergeToMaster/00 - MergeToMaster Design System",
+      "projects_root": "/Volumes/T7 Red/Yuvraj Folder/Freelance Work/Joel Belton - MergeToMaster",
+      "projects": {
+        "P1": {
+          "dir": "P1 - Frontend Design/Animations using Hyperframes/MergeToMaster",
+          "note": "P1's HyperFrames project lives below the P1 folder."
+        }
+      },
+      "decisions_file": "joel-decisions.md",
+      "decisions_order": "newest_first",
+      "decision_scopes": [
+        "channel",
+        "video",
+        "instance"
+      ],
+      "rules_file": "rules.md",
+      "preference_prefix": "J",
+      "labelled_cases_file": "critic/labelled-cases.jsonl",
+      "text_dirs": [
+        "text"
+      ],
+      "skill": "mergetomaster-studio",
+      "skill_master": "Skill/mergetomaster-studio",
+      "rule_id_pattern": "\\b[A-Z]{1,2}(?:-T\\d)?-\\d{2}\\b",
+      "gates": {
+        "G1": "Inputs",
+        "G2": "Plan",
+        "G3": "Stills",
+        "G4": "Rough render",
+        "G5": "Critique and repair",
+        "G6": "Deliver",
+        "G7": "Joel's review"
+      },
+      "waiting_on_client_ids": [
+        "joel"
+      ],
+      "protected_files": {
+        "design_system": [
+          "joel-decisions.md",
+          "rules.md",
+          "critic/labelled-cases.jsonl"
+        ],
+        "project": [
+          "approvals.jsonl",
+          "events.jsonl"
+        ]
+      },
+      "blocked_commands": [
+        "snapshot --describe"
+      ],
+      "review_inbox": {
+        "service": "Frame.io",
+        "import": "csv",
+        "note": "Export the review link's comments as CSV; aem import-review reads the header row and maps columns."
+      },
+      "audio_libraries": [
+        {
+          "name": "Epidemic Sound",
+          "path": "~/Documents/Epidemic Sound"
+        },
+        {
+          "name": "Envato Elements",
+          "path": null
+        }
+      ],
+      "idle_minutes": 10
+    }
+  ]
+}
