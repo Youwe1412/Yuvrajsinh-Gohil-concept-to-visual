@@ -18,10 +18,27 @@ SCOPES = ("channel", "video", "instance")
 HOW_TYPED = {"terminal": "in a terminal", "slash command": "with /client-said in Claude Code"}
 
 
+QUOTE_MATCH_MIN = 20  # shorter quotes ("ok", "love it") are never taken to be one already in the file
+
+
+def entry_quoting(path: Path, quote: str) -> str | None:
+    """The heading of the decisions-file entry that already quotes these words, if one does (whitespace and line
+    breaks aside; quotation marks around the words aside)."""
+    from . import recall
+    want = " ".join(quote.split()).strip('"\u201c\u201d ')
+    if len(want) < QUOTE_MATCH_MIN:
+        return None
+    for sec in recall.sections(path):
+        if want in " ".join(" ".join(recall.quotes(sec["body"])).split()):
+            return sec["heading"]
+    return None
+
+
 def client_said(ctx: Context, quote: str, *, scope: str | None, source: str, item: str | None = None,
                 about: str | None = None, ruling: str | None = None) -> dict:
     """Add a dated entry to the client's decisions file: the quote exactly as typed, and who typed it. With --about
-    (a moment, `video` or `channel`) the quote is also the client's ruling at that level in the labelled cases."""
+    (a moment, `video` or `channel`) the quote is also the client's ruling at that level in the labelled cases; a
+    quote the decisions file already has is not written again, and the ruling names the entry that has it."""
     operator.assert_checked("client-said")
     quote = quote.rstrip("\n")
     if not quote.strip():
@@ -48,6 +65,17 @@ def client_said(ctx: Context, quote: str, *, scope: str | None, source: str, ite
     path = ctx.client.decisions_path
     if not path.exists():
         raise AemError(f"decisions file not found: {path}")
+    existing = entry_quoting(path, quote) if about else None
+    if existing:
+        from . import rulings
+        ledger.record(ctx, "client_said", note=f"{scope} · {source} · already in \"{existing}\"", fill_stage=True,
+                      quote_sha256=sha256_text(quote), decisions_file=str(path), typed_by=ctx.client.operator,
+                      via=operator.via(), about=about, ruling=ruling, decisions_entry=existing, source="aem client-said")
+        case = rulings.about(ctx, about, quote, ruling=ruling, source=source, entry=existing)
+        return {"ok": True, "file": str(path), "placed": f"already in the entry \"{existing}\"; not written again",
+                "heading": f"## {existing}", "scope": scope, "quote_sha256": sha256_text(quote),
+                "entered_by": ctx.client.operator, "via": operator.via(), "about": about, "case": case,
+                "existing_entry": existing}
     when = ts()
     scope_text = {"channel": "channel (every video)",
                   "video": f"video ({ctx.project})" if ctx.project else "video",
@@ -93,7 +121,7 @@ def client_said(ctx: Context, quote: str, *, scope: str | None, source: str, ite
     case = None
     if about:
         from . import rulings
-        case = rulings.about(ctx, about, quote, ruling=ruling, source=source)
+        case = rulings.about(ctx, about, quote, ruling=ruling, source=source, entry=heading[3:])
     return {"ok": True, "file": str(path), "placed": placed, "heading": heading, "scope": scope,
             "quote_sha256": sha256_text(quote), "entered_by": ctx.client.operator, "via": operator.via(),
             "about": about, "case": case}

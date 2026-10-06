@@ -214,13 +214,19 @@ class Learn(unittest.TestCase):
     def test_the_channel_statement_is_stored_and_recalled_first(self):
         self.w.import_notes()  # P1's moments index, as `aem moments` leaves it on the drive
         p2 = self.p2()
+        decisions = self.w.ds / "joel-decisions.md"
+        before = sha(decisions)
         code, d = self.w.run("client-said", "--about", "channel", "--source", "WhatsApp, 5 Oct 2026", stdin=QUOTE, cwd=p2)
         self.assertEqual(code, 0, d)
         case = self.cases()[-1]
         self.assertEqual((case["level"], case["video"], case["ruling"], case["moment"], case["source"]),
                          ("channel", "P2", None, None, "WhatsApp, 5 Oct 2026"))
         self.assertEqual(case["joel_words"], QUOTE)  # verbatim
-        self.assertIn(QUOTE, (self.w.ds / "joel-decisions.md").read_text())
+        # His words are already in joel-decisions.md (the 5 October entry, across wrapped lines): not written again;
+        # the ruling names that entry.
+        self.assertEqual(d["existing_entry"], "2026-10-05 · P2 (Claude Code video) · WhatsApp")
+        self.assertEqual(case["decisions_entry"], "2026-10-05 · P2 (Claude Code video) · WhatsApp")
+        self.assertEqual(sha(decisions), before)
         r = self.w.run_raw("recall", cwd=p2, operator=False)
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
@@ -257,6 +263,7 @@ class Learn(unittest.TestCase):
                          ("explicit", "change", "fd_S04_50ms", "asked", "labelled", "v08"))
         self.assertEqual(case["render_sha256"], sha(self.w.project / "renders" / "v08" / "fd_S04_50ms_v08.mp4"))
         self.assertEqual(case["joel_words"], "take that flash out")
+        self.assertTrue(case["decisions_entry"].endswith("· P1 · WhatsApp, 14 Sep 2026"))  # a new entry, written
         # A remark with no keep, change or remove is his words on the moment, not a ruling.
         code, d = self.w.run("client-said", "--about", "fd_S04_trust", "--source", "WhatsApp", stdin="love this one")
         self.assertEqual(code, 0, d)

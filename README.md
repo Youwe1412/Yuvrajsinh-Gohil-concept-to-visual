@@ -12,6 +12,13 @@ approvals tied to the exact render, the critic's labelled cases, every tool call
 with `aem recall`), **measure** (time per stage, waits, idle, turns; a stage is inferred when none was
 opened) and **check** (every render as it is made, the ledgers' integrity, drift, the install).
 
+Since 1.1.0 the record also helps the agent do its best work for each client: each placement is a
+**moment** (`aem moments`: its words, teaching job, whether the client asked for it, its contract,
+renders, approval and ruling); each render comes with **evidence** the agent can look at (`aem
+evidence`: readable poses, phone crops, a strip around the fastest transition, sync in frames); and the
+client's rulings, at the level they gave them, are recorded (`import-review`, `client-said --about`,
+`accept-video`) and reported (`aem calibrate`) without changing a rule.
+
 AEM has two parts:
 
 - **`aem`**, a command-line tool that holds all the logic. Python 3 standard library only, plus
@@ -33,7 +40,7 @@ MergeToMaster.
 
 AEM does not stop an agent that wants to misbehave; it makes the misbehaviour visible in the record.
 The only commands an agent cannot run are the ones that write the record (`approve`, `reject`,
-`client-said`, `stage`, `accept-edit`, `new-client`, `inbox accept`/`dismiss`), and the CLI refuses
+`client-said`, `stage`, `accept-edit`, `accept-video`, `new-client`, `inbox accept`/`dismiss`), and the CLI refuses
 those itself; a ledger line written any other way stays flagged by `aem integrity` until the operator
 accepts it. Nothing outside Claude Code and Codex is observed, and if `aem` cannot run, everything goes
 through and the plugin says so. The limits of each part are in [docs/ABOUT.md](docs/ABOUT.md#9-limits-exactly).

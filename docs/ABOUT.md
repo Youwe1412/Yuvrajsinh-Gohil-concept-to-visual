@@ -11,7 +11,9 @@ docs go deeper: [INSTALL.md](INSTALL.md) (setup), [OPERATOR.md](OPERATOR.md) (da
 [CLI.md](CLI.md) (every command, format and limit).
 
 Written 6 October 2026 and rewritten the same day for 1.0.0, when AEM stopped being a gatekeeper and
-became a notary (§12 says what changed and why).
+became a notary (§12 says what changed and why). Extended 7 October 2026 for 1.1.0, which makes the
+record work for the agent: the moment as the unit of work, evidence Claude can see, and a loop that
+learns from how the client actually reviews (§13).
 
 ---
 
@@ -44,6 +46,13 @@ every render, and never stands in the way. It has three jobs, in this order:
 
 It interrupts at exactly one point, delivery, and even there it asks rather than refuses.
 
+Since 1.1.0 the record also helps the agent do its best work for each client: every placement is a
+**moment** that knows what it teaches, whether the client asked for it, and what happened to it; every
+render comes with **evidence** the agent can look at (poses, phone crops, a strip, sync in frames); and
+the client's **rulings**, at the level they were given, come back at the start of the next video
+(§13). The principle does not change: AEM observes and records, never blocks; the evidence and the
+calibration are advisory.
+
 **AEM does not stop an agent that wants to misbehave; it makes the misbehaviour visible in the
 record.** Every tool call the agent makes is in `events.jsonl` with the files it named; a ledger line
 written outside `aem` stays flagged until the operator accepts it; the only commands an agent cannot run
@@ -61,6 +70,7 @@ what each part misses.
    │                        aem  (Python CLI)                           │
    │  record · recall · ledger · approvals · render check · observe     │
    │  sentinel · integrity · drift · doctor · review import · inbox     │
+   │  moments · evidence · rulings · accept-video · calibrate (1.1.0)   │
    └───────▲──────────────────────────▲─────────────────────▲──────────┘
            │ process calls            │ hook command        │ typed
            │                          │                     │
@@ -90,7 +100,7 @@ Three rules shaped every decision:
 
 ### 3.1 The `aem` command (`cli/`)
 
-Python 3 standard library only, plus `ffprobe`/`ffmpeg`. About 5,100 lines (CLI) and 1,100 (plugin).
+Python 3 standard library only, plus `ffprobe`/`ffmpeg`. About 7,100 lines (CLI) and 1,150 (plugin).
 Installed by `cli/install.sh` as a link at `~/.local/bin/aem`. Every command takes `--json`.
 
 | Module | Holds |
@@ -98,7 +108,11 @@ Installed by `cli/install.sh` as a link at `~/.local/bin/aem`. Every command tak
 | `registry.py` | Reads the registry; resolves the project for every call (`AEM_PROJECT`, the plugin's session pin, the working folder); refuses temporary or out-of-registry folders; the last-used hint |
 | `operator.py` | The check at the entry of the commands that write the record: the operator's terminal (no agent markers) or the plugin's one-time nonce |
 | `observe.py` | `observe`: one tool call recorded with the files it names; stage inference; whether it delivers media with no current approval, and the question to ask |
-| `recall.py` | `recall`: a client's preferences, last five rulings, open questions and labelled-case count, on one screen |
+| `recall.py` | `recall`: how the client reviews, direction of the last video and this one, what they changed last time, their channel-level rulings, preferences, last five rulings, open questions and labelled-case count, on one screen |
+| `moments.py` | `moments`: the moments index (`moments/index.json`): words, job, asked or added, contract, treatment, renders, approval, critic, ruling, time |
+| `evidence.py` | `evidence`: poses, phone crops, a strip, sync and facts for one render, in `evidence.md`; `--video` contact sheets of the cut |
+| `rulings.py` | the client's rulings at their level: `client-said --about`, `accept-video` |
+| `calibrate.py` | `calibrate`: acceptance per video, critic agreement, rules and candidate status changes |
 | `integrity.py` | `integrity`, `accept-edit`: the manifest of every ledger line AEM wrote, what differs from it, and the agent's observed calls that wrote it |
 | `fps.py` | Frame rates as exact rationals (24000/1001, never 23.976); discovery from `aem.project.json`, FCPXML, `data/words.json`, `frame.md`; refuses conflicts; timecode incl. drop-frame |
 | `ledger.py` | `events.jsonl`: stages (and inferred ones), waits, pauses, automatic events, the time report |
@@ -106,7 +120,7 @@ Installed by `cli/install.sh` as a link at `~/.local/bin/aem`. Every command tak
 | `render.py` | `check-render`: probe against spec, frame count against the composition's duration, and the one/two-frame flash scan |
 | `sentinel.py` | `rendered`: is a finished command a render, which files did it write, check each |
 | `context.py` | `context`: the text the agent is given each session |
-| `review.py` | `import-review`: Frame.io CSV → frames, shots, word IDs, drafts |
+| `review.py` | `import-review`: Frame.io CSV → frames, moments, word IDs, drafts (`--notes`: the client's rough-cut notes, which mark moments asked) |
 | `inbox.py` | `inbox`: what waits on the operator; labelled cases from rulings |
 | `clients.py` | `client-said`, `new-client` |
 | `drift.py` | text exports vs HTML pages, installed skill vs master, rule IDs vs `rules.md` |
@@ -118,9 +132,9 @@ The commands, grouped by who runs them:
 
 | Who | Commands |
 |---|---|
-| **Operator only**: the commands that write the record, refused to anyone else whatever the spelling | `approve`, `reject`, `client-said`, `stage` (including the plugin's automatic `stage auto`), `accept-edit`, `new-client`, `inbox accept`, `inbox dismiss` |
+| **Operator only**: the commands that write the record, refused to anyone else whatever the spelling | `approve`, `reject`, `client-said`, `stage` (including the plugin's automatic `stage auto`), `accept-edit`, `accept-video`, `new-client`, `inbox accept`, `inbox dismiss` |
 | **The plugin and Codex run them** (open: they only record and check) | `observe`, `rendered`, `codex-hook` |
-| **Anyone** | `use`, `status`, `recall`, `context`, `report`, `check-render`, `check-approval`, `import-review` (writes drafts only), `inbox` (list), `drift`, `integrity`, `doctor`, `codex-config` |
+| **Anyone** | `use`, `status`, `recall`, `context`, `report`, `moments`, `evidence`, `calibrate`, `check-render`, `check-approval`, `import-review` (writes drafts only), `inbox` (list), `drift`, `integrity`, `doctor`, `codex-config` |
 
 ### 3.2 The registry (`registry/`)
 
@@ -140,6 +154,10 @@ field:
 | `render_sentinel` | `bin/r.sh`, `bin/ra.sh`, `bin/renderall.sh`; output `renders/` | sentinel, stage inference |
 | `review_inbox` | Frame.io CSV; plan files `shotlist.md`, `visual-plan.md`; stills `stills/`; gates G2/G3/G4 | import-review, inbox, stage inference |
 | `idle_minutes` | 10 | idle detection |
+| `review_profile` | reviews the whole video; approval and notes on Frame.io; other feedback on WhatsApp; never sees the process; a note covers a moment within 1 s of its words; direction P2 "none" (§13.1) | moments, import-review, recall, calibrate |
+| `moments` | plan files `visual-plan.md`, shot list `shotlist.md`, placements `data/edit.json`, `renders/*/PLACEMENTS.csv` | moments |
+| `stage_groups` | design G1–G3, build G4, review G5 and G7, placement G6 | the time report |
+| `evidence` | the rule IDs evidence speaks to (sync M-03, phone B-T1-03, flash B-T1-01 M-T1-01 M-26, motion M-T1-03, contract M-18, critic M-19); 6 renders per command at most | evidence |
 
 Joel's entry still carries `protected_files`, `blocked_commands`, `shared_paths` and `audio_libraries`
 from the guard; nothing reads them since 1.0.0 (left in place so the registry did not change; delete
@@ -147,7 +165,7 @@ them when convenient). `client-template/` is what `aem new-client` copies into a
 folder: decisions file (with an "Open questions" section for `recall`), rules file,
 `critic/labelled-cases.jsonl` with its header, `text/`, a README and a registry entry template.
 
-### 3.3 The Claude Code plugin (`plugin/aavkar-educational-motion-studio/`, 1.0.0)
+### 3.3 The Claude Code plugin (`plugin/aavkar-educational-motion-studio/`, 1.1.0)
 
 One plugin of function hooks. The engine allows one hook per event per module and follows `$`
 only within one file, so `hooks/register.tsx` owns every `on(...)`, builds an `io` object of
@@ -155,11 +173,11 @@ closures over `$`, and passes it to six feature files that never see `$`:
 
 | Feature | File | What it does |
 |---|---|---|
-| Context | `context.ts` | On session start and every 30 s: `aem status` + `aem context` → the status line and a prompt section (the principle, the project, three rules for the agent, the client's recall). At session start a toast (`AEM 1.0.0 · joel/P2 · resolved from folder`, or `… no project (folder not registered)`), the recall in the transcript for the operator, and drift toasts. `/aem use` (checks with the CLI, then pins the project to this session), `/aem use --clear`, `/aem status`, `/aem recall`, `/aem new-client`. |
+| Context | `context.ts` | On session start and every 30 s: `aem status` + `aem context` → the status line and a prompt section (the principle, the project, three rules for the agent, the client's recall). At session start a toast (`AEM 1.1.0 · joel/P2 · resolved from folder`, or `… no project (folder not registered)`), the recall in the transcript for the operator, and drift toasts. The status line ends with the moments index's counts (`58 moments · 0 approved · 58 ruled`). `/aem use` (checks with the CLI, then pins the project to this session), `/aem use --clear`, `/aem status`, `/aem moments`, `/aem recall`, `/aem calibrate`, `/aem new-client`. |
 | Ledger | `ledger.ts` | Automatic events: session start/end, your prompts (with origin), turn start/end, tool calls ≥ 30 s, idle start/end (no prompt and no turn for `idle_minutes`, measured from the last activity). `/stage`, `/pause`, `/resume`, `/wait`, `/report`. |
 | Observe | `observe.ts` | Before every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit` call (subagents' too): `aem observe`, which records it. Never refuses, with one exception: a delivery of media with no current approval opens the engine's dialog, "fd_S01 was re-rendered after you approved it. Deliver anyway?", Deliver (records the approval through the confirmation, then runs) or Stop (refuses the call). Where no dialog can be shown, the call is refused once with the `/approve` command to type, and the identical call repeated goes through. Toasts a stage AEM inferred. |
-| Record | `record.ts` | `/approve`, `/reject`, `/client-said`, `/accept-edit`: the slash commands that write the record, each with a one-time nonce. |
-| Render sentinel | `sentinel.ts` | After every `Bash` call: `aem rendered`. For a render, a pass/fail toast with the first reason, the full result added after the command's output for the agent, and the status line redrawn (stale count). |
+| Record | `record.ts` | `/approve`, `/reject`, `/client-said` (with `--about` and `--ruling`), `/accept-video`, `/accept-edit`: the slash commands that write the record, each with a one-time nonce. |
+| Render sentinel | `sentinel.ts` | After every `Bash` call: `aem rendered`. For a render, a pass/fail toast with the first reason, the full result added after the command's output for the agent (with the path of each render's `evidence.md`), an `evidence ready: …` toast, and the status line redrawn (stale count). |
 | Review inbox | `inbox.tsx` | Only with the `reviewInbox` setting on: `/inbox` opens a pane listing what waits on you; buttons run the commands each item names; Reject asks for a reason. |
 
 Settings: `aemPath` (default `aem`, falls back to `~/.local/bin/aem`) and `reviewInbox` (off). Slash
@@ -206,6 +224,14 @@ those three; the chat zip was rebuilt with `Skill/build-chat-zip.sh`, the skill 
 `~/.claude/skills/mergetomaster-studio/`, and `aem drift` reports no drift. `SKILL.md` went from SHA-256
 `ea3f7a73…` to `3fc1ff4e…`, the zip from `59987d64…` to `0af1b8de…`.
 
+For 1.1.0 (7 October 2026): G4 and G5 now give the critic each render's `evidence.md` (never the
+source) and have it write `critic.json` beside it so G7 can score it; G7 follows how Joel reviews (wait
+for Frame.io; import the CSV; attach WhatsApp feedback with `client-said --about`; `accept-video` once he
+accepts the whole video; never ask him to rule on individual animations unless he offers; silence is an
+implicit acceptance only once the whole video is accepted), in `SKILL.md` and
+`references/joel-review.md`, whose rulings table gains a Level column. `SKILL.md` is now `6adc6fe1…`, the
+zip `9b87e573…`; the installed copy matches and `aem drift` reports no drift.
+
 ---
 
 ## 4. The files AEM reads and writes
@@ -219,9 +245,12 @@ those three; the chat zip was rebuilt with `Skill/build-chat-zip.sh`, the skill 
 | `.aem-integrity/<ledger>.jsonl` | beside each ledger | AEM only | the hash of every line AEM wrote, for `aem integrity` |
 | `reports/time.md` | project | `report` | per gate, per scene, per gate-and-scene, inferred stages, with how each number was computed |
 | `aem.project.json` | project (optional) | you | `fps`, `render` (width, height, alpha), `scenes`, `flash.min_area_pct`, `placements`, `render_sentinel`, `review_inbox`, `stage_inference` |
-| `reviews/<client>/<date>-*` | project | `import-review` | CSV copy, review JSON, draft rulings, draft labelled cases |
+| `reviews/<client>/<date>-*` | project | `import-review` | CSV copy, review JSON, draft rulings, draft labelled cases; with `--notes`, `<date>-notes.csv` and `.json` |
+| `moments/index.json` | project | `moments` (and `import-review`, `client-said --about`, `accept-video`, which rebuild it) | the moments and what could not be linked (CLI.md, Moments) |
+| `reviews/<moment>/<version>/` | project | `evidence` (the sentinel after a render) | `poses/`, `phone/`, `strip.jpg`, `sync.json`, `facts.json`, `evidence.md`; the critic adds `critic.json` |
+| `reviews/video/<cut>/` | project | `evidence --video` | one contact sheet per moment, `video.md` |
 | decisions file | design system | `client-said` only | dated, verbatim, scoped entry, "typed by <operator> with /client-said in Claude Code" or "in a terminal" |
-| `critic/labelled-cases.jsonl` | design system | `approve`/`reject` with `--label`, `inbox accept`/`dismiss` | the file's own fields + `item_kind`, `gate`, `reason`, `decision`, `inbox_ref`…; `source` = operator id; operator rulings are `development case` |
+| `critic/labelled-cases.jsonl` | design system | `approve`/`reject` with `--label`, `inbox accept`/`dismiss`, `client-said --about`, `accept-video` | the file's own fields + `moment`, `level` (explicit, implicit, video, channel; `operator` for ours), `asked`, `direction`, `version`, `critic_findings`, and for ours `item_kind`, `gate`, `reason`, `decision`, `inbox_ref`…; operator rulings are `development case` |
 | `codex/pending/` | `~/.aem/` | `codex-hook` | start time of a running Codex Bash call |
 
 Ledgers are append-only. A correction is a new line (a rejection, a stale mark, a correcting case),
@@ -234,8 +263,9 @@ never an edit.
 The operator is Yuvraj (or whoever runs the studio). "Agent" is Claude Code with the plugin.
 
 **Start.** Start Claude Code in the project's folder (`P2 - Claude Code`). Check the start toast
-(`AEM 1.0.0 · joel/P2 · resolved from folder`; no toast means the plugin is not loaded), the recall in
-the transcript, the status line and any drift toast. Started somewhere else? `/aem use joel/P2` pins it
+(`AEM 1.1.0 · joel/P2 · resolved from folder`; no toast means the plugin is not loaded), the recall in
+the transcript (how Joel reviews, P1's direction and P2's, what he changed on P1, his channel-level
+rulings), the status line and any drift toast. `aem moments` once the plan or placements exist. Started somewhere else? `/aem use joel/P2` pins it
 to that session. `aem doctor` says what is wrong with an install.
 
 **G1 Inputs.** `/stage G1`. The agent builds the word map, footage inventory and inputs list, per
@@ -248,21 +278,25 @@ Review rows in `/inbox` or just read and approve the plan in conversation.
 **G3 Stills.** `/stage G3`. Stills under `stills/` appear in the inbox; approve or reject each.
 
 **G4 Rough render.** `/stage G4 fd_S01_next-token` per scene. The agent renders (`bin/r.sh …`);
-the sentinel checks every output and tells both of you. A flash or wrong frame count is the agent's
+the sentinel checks every output, builds its evidence (`evidence ready: …`), and tells both of you. A flash or wrong frame count is the agent's
 to fix before you look. When you are happy: `/approve fd_S01_next-token` (its last checked render,
 at the open gate). `/reject fd_S01_next-token <reason>` otherwise.
 
-**G5 Critique and repair.** The agent critiques and repairs. Any re-render makes earlier approvals
-stale at once (status line: `· 1 stale`). Approve again after you have looked.
+**G5 Critique and repair.** The agent gives a critic subagent the render's `evidence.md` alone; the
+critic writes `critic.json` beside it. The agent repairs. Any re-render makes earlier approvals stale at
+once (status line: `· 1 stale`). Approve again after you have looked; `aem evidence --video <cut>` shows
+each moment in the assembled cut first.
 
 **G6 Deliver.** `/stage G6 …`. The agent checks approvals first (`aem check-approval`). If it writes a
 placement FCPXML or copies a render into `Animations Done` while that render has no current approval,
 you get the one question AEM asks: Deliver (recorded as approved through the confirmation) or Stop.
 
-**G7 Joel's review.** Export Frame.io comments as CSV; the agent (or you) runs `aem import-review`.
-In `/inbox`, rule on each comment (Keep, Change, Remove, or Reject a mis-mapped one). Record what
-Joel said with `/client-said video --source "Frame.io, <date>" <his words>`. Shots with no comment
-stay pending: silence is not a ruling.
+**G7 Joel's review.** Wait for his review on Frame.io. Export the comments as CSV; the agent (or you)
+runs `aem import-review`. In `/inbox`, read each comment on a moment as Keep, Change or Remove, record
+each comment on no moment as a remark about the video, or Reject a mis-mapped one. WhatsApp feedback:
+`/client-said --about <moment|video|channel> --source "WhatsApp, <date>" <his words>`. When he accepts
+the whole video: `/accept-video <version> Frame.io, <date>`. Moments he did not comment on stay
+unruled until then. `aem calibrate joel` says what his rulings show.
 
 **Close.** `/stage end`, `/report`. Nothing needs clearing: a project is not stored anywhere global.
 Forgot a `/stage` somewhere? The report lists the stages AEM inferred and counts their time.
@@ -308,7 +342,7 @@ planning, not billing.
 
 ## 8. Testing and verification
 
-| What | Result at 1.0.0 |
+| What | Result at 1.0.0 (1.1.0: §11) |
 |---|---|
 | CLI unit tests (`tests/run.sh`, which wraps `python3 -m unittest discover -s tests -t tests`) | see §11 for the run's numbers. Kept: ledger, sentinel, integrity, operator-only refusal, isolation, resolution from the folder. New: `test_observe.py` (every call AEM denied in the P2 session of 6 October now runs with no interruption and is recorded; the delivery confirmation; stage inference), `test_integrity.py`, `test_recall.py`, `doctor`. Deleted: the guard's and the chat authority's tests (`test_guard.py`, `test_authority.py`). |
 | Plugin tests (`claude plugin test`, Claude Code 2.1.288) | see §11. New: `observe.test.ts` (the P2 calls run with no dialog; an unapproved delivery asks, an approved one does not; Deliver, Stop, dismiss, the no-dialog fallback), `record.test.ts`. Deleted: `guard.test.ts`, `authority.test.ts`. The `claude` on PATH (2.1.283) cannot load the plugin; `tests/run.sh` uses the desktop app's newest bundled build |
@@ -318,7 +352,10 @@ planning, not billing.
 | Flash scan on 59 real P1 masters and the client-fix renders | Joel's flash caught, fix passes (run at `275e0bc`, not repeated) |
 | `aem drift` on Joel's real design system | no drift after the skill change (§3.6) |
 | `aem recall joel` and `aem doctor` on the real design system and P2 | read-only; recall lists J-01…J-08, four rulings, four open questions, 3 development cases |
-| Codex 0.146 live (`tests/live/codex-hooks-check.sh`) | at 0.8.0: SessionStart context ran; the agent's `aem approve` was refused by the CLI itself. Not re-run for 1.0.0 |
+| Codex 0.146 live (`tests/live/codex-hooks-check.sh`) | at 0.8.0: SessionStart context ran; the agent's `aem approve` was refused by the CLI itself. Not re-run for 1.0.0 or 1.1.0 |
+| 1.1.0, moments (`test_moments.py`, P1 fixture in `tests/fixtures/p1`) | 58 moments from P1's real placements; 50 asked, 8 added by Joel's 66 notes; the three client-fixed scenes carry explicit rulings; note #20's range resolves to its word span; no notes means all added, said at the top; time only per stage |
+| 1.1.0, evidence (`test_evidence.py`, P1's real renders from the drive) | the 50 ms flash in the strip and `facts.json` before the fix and not after; `audience-questions` reveals within a frame of P1's hand-measured onsets; `evidence.md` parses and every image it names exists; 4K cost |
+| 1.1.0, learning loop (`test_learn.py`) | the 66 comments map to the right moments; 3 explicit changes; `accept-video` writes 55 implicit; calibrate's figures, both candidate rules and the 30-case message; no rulings stops; operator rulings left out; the channel quote stored (linked to its entry) and recalled first |
 
 Real client files were only read, except the skill change in §3.6. Everything else was tested on
 copies in temporary folders.
@@ -338,7 +375,10 @@ What each part misses:
 | Ledger integrity | a ledger and its manifest rewritten consistently; a line identical to one AEM wrote; lines already there before AEM's first write (the baseline) | — |
 | Stage inference | work that changes no plan file, still, scene source or render; work while any stage is open (it stays in that stage) | a stray write to `shotlist.md` opens G2 when nothing else was open |
 | Render sentinel | background renders; unlisted render scripts; renders written outside `renders/` and not named | other media changing under `renders/` during the command is checked too |
-| Recall | rulings not written as `## ` entries; quotes not in `>` lines or quotation marks; long quotes are cut with an ellipsis (the agent reads the file for the rest) | — |
+| Recall | rulings not written as `## ` entries; quotes not in `>` lines or quotation marks; long quotes are cut with an ellipsis (the agent reads the file for the rest); a video's direction until its moments index is built | — |
+| Moments | plan tables that are not Markdown tables; a moment's words when `data/words.json` drifts | "asked" is by time: a moment we added over footage the client asked for at that time counts as asked |
+| Evidence | a scene that never holds still for a quarter second (first and last frame only); which element moved (it measures the whole picture); cue words nobody wrote down (guessed from motion, and labelled so) | the strip sits on the largest change, which may be a cut |
+| Calibrate | critic agreement where the critic wrote no `critic.json`; rules nobody linked to a ruling by ID | one video's rulings read as a pattern: under 30 explicit cases every figure says it is development data |
 | Inbox | not live (refreshed on open and after each button); plan tables must be Markdown tables | an identical file under another name counts as already ruled |
 | Everything | anything when `aem` cannot run: every call goes through and the plugin says so (a toast at most once a minute) | — |
 
@@ -379,26 +419,33 @@ What the Claude Code API could not do, and the nearest thing built instead:
 
 ---
 
-## 11. Where things stand (6 October 2026, 1.0.0)
+## 11. Where things stand (7 October 2026, 1.1.0)
 
-Done and committed: the notary redesign below (§12), on top of Phases 1–7.
+Done and committed: the three 1.1.0 additions (§13), one commit per phase, on top of the notary
+redesign (§12).
 
-Results of the 1.0.0 run: CLI unit tests 187 pass; plugin tests 52 pass in 7 files; `claude plugin
-validate` passes for the plugin and the marketplace; the isolation check found `~/.aem` and
-`registry/clients.json` unchanged. The plugin 1.0.0 is installed for the user from the local
-marketplace; it takes effect in new sessions.
+Results of the 1.1.0 run: CLI unit tests 218 pass (187 at 1.0.0; new: `test_moments.py` 11,
+`test_evidence.py` 9, `test_learn.py` 11, the P1 ones on the real fixture and, for evidence, the real
+renders on the drive); plugin tests 54 pass in 7 files; `claude plugin validate` passes for the plugin
+and the marketplace; the isolation check found `~/.aem` and `registry/clients.json` unchanged. Evidence
+on P1's 59 real masters: 1.37 s per render (median), 2.4 s per 10 s of 4K MP4 scene, 120 s for all 59
+(§13.3). The plugin 1.1.0 is installed for the user from the local marketplace; it takes effect in new
+sessions.
 
 Not done yet:
 
+- **Joel's P2 trust statement is not yet a ruling in the labelled cases.** His words are in
+  `joel-decisions.md` (the 5 October entry); `client-said --about channel` is the operator's to run, and
+  it links the ruling to that entry rather than writing the words again.
 - **Not pushed anywhere**: the repository has no remote, so the marketplace works from a local path.
 - **Not switched on for you**: the review inbox setting is off; Codex hooks are not in your
   `~/.codex/config.toml` (run `aem codex-config` and add them when you want them).
 - **The end-to-end acceptance run** (`tests/acceptance/operator.sh`) was started before 0.8.0 and has
   not been re-run.
-- **Live checks not re-run for 1.0.0**: the Codex hooks check, and a live session's dialog (the
+- **Live checks not re-run for 1.1.0**: the Codex hooks check, and a live session's dialog (the
   confirmation is covered by plugin tests with the engine's own AskUserQuestion path).
 - P2 is registered (`joel/P2`, `P2 - Claude Code`, 25/1 from `RoughCut.mp4`, 3840 × 2160); it has no
-  HyperFrames project yet.
+  plan or HyperFrames project yet, so it has no moments.
 
 ---
 
@@ -430,3 +477,122 @@ History, briefly: 0.7.0 built the guard; 0.8.0 removed the global "active projec
 from the folder) and made the CLI refuse operator commands itself; 0.9.0 let the operator's chat message
 stand for its turn and added ledger integrity; 1.0.0 made AEM a notary. The skill's `events.jsonl`,
 `approvals.jsonl` and labelled-cases formats are unchanged throughout: fields were only added.
+
+---
+
+## 13. What 1.1.0 added (7 October 2026)
+
+1.0.0 made AEM a notary. 1.1.0 makes what it records useful to the agent doing the work, in three
+additions, each built on the one before: the moment as the unit of work, evidence Claude can see, and a
+loop that learns from how the client actually reviews. The ground rules held: all logic in the CLI, the
+plugin only translates and shows; everything client-specific in the registry; the skill's formats
+extended, never forked; records append-only and integrity-checked; nothing slows the agent (evidence runs
+after a render; findings are advisory).
+
+### 13.1 How Joel reviews: the review profile
+
+Joel reviews the finished video. He never reviews individual animations and never sees the process.
+His approval, feedback and any timestamped instructions arrive on Frame.io; some feedback arrives on
+WhatsApp. He doesn't always give instructions: P1 had 66 timestamped Frame.io notes; for P2 he gave
+none, and said why ("I really liked what you did with the other video so id like to try you mostly
+just adding in visuals that you feel like are appropriate at the time rather than me commenting what
+should go where", WhatsApp, 5 October 2026). The absence of notes is his decision, a channel-level
+ruling in his words, and his level of direction per video is data.
+
+So a ruling has a level: a comment on one moment (**explicit**), the video accepted with no comment on
+it (**implicit**), a remark about the video (**video**) or about the editor and how to work (**channel**).
+The registry's `review_profile` holds this for each client (Joel: unit "whole video", approval and notes
+on Frame.io, other feedback on WhatsApp, `sees_process: false`, a note covers a moment within 1 s of its
+words, as G7 says, and P2's direction "none"); `aem recall` opens with it.
+
+### 13.2 The moment is the unit of work (Phase 1)
+
+A moment is one thing placed in the cut, with its word IDs, teaching job, whether the client asked for
+it or we added it, its contract from the shot list (what the viewer knows before and after, what must
+stay true, where the picture stops being accurate), treatment (animation, footage, screen recording,
+nothing), scene and source, render versions, approvals, critic findings, the client's ruling at its
+level, and the time spent on it. `aem moments` derives all of it from the files the skill already
+writes (the plan and shot list, the placements, `data/words.json`, the renders, `approvals.jsonl`,
+`events.jsonl`, the labelled cases) into `moments/index.json`, and lists what it could not link. Asked or
+added is note coverage: a moment is asked when one of the client's notes lies within a second of its
+words; with no notes, every moment is added and the index says so at the top. `aem report` adds time per
+moment and per stage group (design, build, review, placement); the status line shows
+`N moments · M approved · K ruled`.
+
+On P1: 58 moments (the other 8 placements are Joel's footage), 66 notes covering **50 asked and 8
+added** (`fd_title-t08_okay`, `fd_S02_tells-b`, `fd_S05_board-a`, `fd_S05_audience-questions`,
+`fd_teach-gaps`, `fd_S05_parallel-1`, `fd_S05_board-e`, `fd_S05_parallel-3`); nine notes (#4, #8, #23,
+#29, #32, #33, #62, #69, #70) cover no moment of ours. The brief expected 45 and 13: the gap is the
+`teach-*` and `reference-*` inserts of the v07 opportunity pass, which we added but which sit where
+Joel's notes asked for footage, so by time they count as asked. A plan's "asked or added" column
+overrides coverage when a project has one.
+
+**It does not:** decide what a moment should be, edit the plan or the placements, guess a moment's
+words beyond `data/words.json`, or spread time that names no moment across moments (it is reported as
+unattributed).
+
+### 13.3 Evidence Claude can see (Phase 2)
+
+After every render, `aem evidence` writes `reviews/<moment>/<version>/`: a PNG of each readable pose (the
+frame the picture settles on after each cue word, plus the first and last frame) 1920 px wide, the same
+at 390 px (a phone held upright), an 8-frame JPEG strip around the fastest transition, `sync.json` (each
+cue word against the frame the picture settles, in frames), `facts.json` (the render check), and
+`evidence.md`, which names every image by relative path with the moment's contract and the rule IDs and
+is all a critic subagent needs. `--video` makes a contact sheet per moment from the assembled cut. The
+plugin adds the `evidence.md` path to the render's tool result and toasts `evidence ready: fd_S04_50ms
+v09, sync max offset 2f, no flash`.
+
+On P1's real renders: the one-frame flash Joel had removed shows in the strip and in `facts.json` of
+the render he ruled on (frame 2, the whole frame) and not in the fix; the reveals of
+`audience-questions` land within a frame of the onsets measured by hand in P1's `OUTSTANDING.md`.
+Measured cost on all 59 v08 masters (423.6 s of 4K): 120 s in all, 1.37 s per render (median, 9.9 s the
+most), 2.4 s per 10 s of MP4 scene (median; at most 5.1 s), 11.9–15.4 s per 10 s for the four ProRes
+alpha MOVs; under the 30 s budget throughout. The 11-minute P1 film: 58 contact sheets in 8.2 s.
+
+**It does not:** judge anything (it shows; the critic and the operator judge), block or delay a delivery
+(it runs after the render, and a failure to build it is a note, not an error), read the scene source, or
+claim a sync offset it did not measure (without cue words the toast says "sync not measured", and cue
+words inferred from motion are labelled as guesses).
+
+### 13.4 A loop that learns from how the client reviews (Phase 3)
+
+`aem import-review` maps each Frame.io comment to the moments it is on, by the same rule as note
+coverage: an explicit ruling candidate, read as keep, change or remove in the inbox; a comment on no
+moment is a video-level remark. On P1 all 66 map: 57 to moments (exactly the 50 asked ones), 9 to the
+video; every comment a HyperFrames build answered (P1's `FRAMEIO-COMMENTS-MAP.md`) is on that build,
+except #4, whose build starts 3.1 s after the note, over Joel's still. `client-said --about
+<moment|video|channel>` records the client's words as a ruling at that level ("do whatever you think is
+appropriate" is channel-level); words the decisions file already has are not written again. `aem
+accept-video <version> --source "Frame.io, <date>"` (the operator's) writes an implicit acceptance,
+with the delivered render's SHA-256, for each moment with no explicit comment: on P1, 55. Silence is
+never written as explicit. Each labelled case carries the moment, level, ruling (keep, change, remove,
+accepted), the client's words, render hash, critic findings, rule IDs, asked or added and the video's
+direction, in the file's own field names.
+
+`aem calibrate joel` reports acceptance per video (asked against added, by treatment and job), the
+critic's agreement (hits, misses, false alarms; explicit rulings weigh 1, implicit 0.25), and per rule
+ID whether it was involved, confirmed, overruled or untested; a rule the rulings support or contradict
+appears as a proposed `rules.md` line with the `joel-decisions.md` entry it rests on. On P1:
+`0 of 8 additions changed, 3 of 50 asked`, the opposite of the brief's expectation: Joel's three changes
+(`fd_S04_50ms`, `fd_S04_button-states`, `fd_S04_character`) are on moments he asked for, and each
+took out something inside them he had not asked for (a one-frame website flash, two demonstration
+captions). M-26 and
+B-29 come out "suggested by rulings, unconfirmed"; with 3 explicit cases, everything is "development
+data, not evidence". `aem recall` now opens with how Joel reviews, the direction of the last video and
+this one, what he changed last time by treatment and job, and his channel-level rulings, newest first.
+
+**It does not:** edit `rules.md` or change a rule's status (it prints the proposed line), treat silence
+as a ruling before the whole video is accepted, ask the client to rule on individual animations, count
+the operator's own rulings as the client's, score the critic where it wrote no `critic.json` (P1 has
+none, so critic agreement is "untested"), or call three cases a pattern.
+
+### 13.5 What only becomes meaningful after Joel reviews P2
+
+P2 has no notes by Joel's choice, so every moment will be "added" and P2's direction is "none".
+Everything that compares rulings with what we did needs his review of the finished P2 on Frame.io:
+whether "added" moments fare differently from P1's asked ones when he did not direct them; the first
+critic agreement figures (the skill now has the critic write `critic.json`; P1 has none); whether M-26
+and B-29 hold on a second video; the first rulings on treatments other than animation, if P2's plan
+uses footage or screen recordings; and the first change or keep in his own words, since none of P1's
+three changes has them. Until then calibrate reports development data.
+

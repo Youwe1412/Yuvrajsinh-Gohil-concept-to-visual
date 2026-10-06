@@ -613,7 +613,7 @@ def table(index: dict) -> str:
     if not index["notes"]:
         lines.append(index["note"])
     lines.append(f"{'#':>3}  {'Moment':<28} {'Span':<15} {'Words':<12} {'Treatment':<10} {'Asked':<12} "
-                 f"{'Renders':<9} {'Approval':<9} {'Ruling':<16} Time")
+                 f"{'Renders':<9} {'Approval':<9} {'Ruling':<18} Time")
     for m in ms:
         span = f"{_clock(m.get('start'))}–{_clock(m.get('end'))}" if m.get("start") is not None else "-"
         asked = (" ".join(f"#{n['number']}" for n in m["notes"])[:12] or "asked") if m["asked"] else "added"
@@ -624,7 +624,7 @@ def table(index: dict) -> str:
         ruling = "-" if not r else f"{r['level']} {r['ruling'] or ''}".strip()
         t = m.get("time")
         lines.append(f"{m['index']:>3}  {m['id'][:28]:<28} {span:<15} {_span_ids(m.get('word_ids') or [])[:12]:<12} "
-                     f"{(m.get('treatment') or '-')[:10]:<10} {asked:<12} {renders:<9} {ap:<9} {ruling[:16]:<16} "
+                     f"{(m.get('treatment') or '-')[:10]:<10} {asked:<12} {renders:<9} {ap:<9} {ruling[:18]:<18} "
                      + (ledger.fmt_duration(t["wall_s"]) if t else "-"))
     if index["video_notes"]:
         lines.append(f"{len(index['video_notes'])} note(s) cover no moment (about the video or the edit): "

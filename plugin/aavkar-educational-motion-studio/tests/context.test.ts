@@ -11,7 +11,7 @@ describe('context', () => {
     const w = floor(on, INACTIVE)
     on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' as const }] }))
     await $.session.start(START)
-    expect(w.toasts).toContain('AEM 1.0.0 · no project (folder not registered)')
+    expect(w.toasts).toContain('AEM 1.1.0 · no project (folder not registered)')
     expect(w.statuses.at(-1)).toBe('AEM · no project here · start in its folder or /aem use <client>/<project>')
     expect(w.calls.some(c => c[1] === 'drift')).toBe(false)
     expect(w.calls.some(c => c[1] === 'recall')).toBe(false)
@@ -32,7 +32,7 @@ describe('context', () => {
     await $.session.start(START)
     expect(w.statuses.at(-1)).toBe('AEM · MergeToMaster · P1 - Test · G1 · 0:05')
     // Every session starts with one toast naming the version, the project and how it was resolved.
-    expect(w.toasts[0]).toBe('AEM 1.0.0 · joel/P1 · resolved from folder')
+    expect(w.toasts[0]).toBe('AEM 1.1.0 · joel/P1 · resolved from folder')
     expect(w.toasts).toContain('AEM drift [skill] SKILL.md installed copy differs from the master')
     expect(w.toasts).toContain('AEM drift [text-export] text/Motion.md page changed since the export')
     expect(w.calls.map(c => c[1])).toEqual(expect.arrayContaining(['status', 'context', 'recall', 'drift']))

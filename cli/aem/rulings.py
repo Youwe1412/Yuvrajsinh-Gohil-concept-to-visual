@@ -126,13 +126,16 @@ def check_about(ctx: Context, target: str, ruling: str | None) -> dict | None:
     return m
 
 
-def about(ctx: Context, target: str, quote: str, *, ruling: str | None, source: str) -> dict:
-    """A client quote attached to a moment, the video or the channel (aem client-said --about)."""
+def about(ctx: Context, target: str, quote: str, *, ruling: str | None, source: str, entry: str | None = None) -> dict:
+    """A client quote attached to a moment, the video or the channel (aem client-said --about). `entry` is the
+    decisions-file entry that quotes it."""
     check_about(ctx, target, ruling)
     index = _index(ctx) if ctx.project_dir else {"moments": []}
+    extra = {"decisions_entry": entry} if entry else None
     if target in ("video", "channel"):
         case = make_case(ctx, level=target, ruling=ruling, words=quote, source=source, moment=None, index=index,
-                         notes=f"Ours: {ctx.client.contact}'s words about the {target}, recorded with client-said --about {target}.")
+                         notes=f"Ours: {ctx.client.contact}'s words about the {target}, recorded with client-said --about {target}.",
+                         extra=extra)
         return append(ctx, case, by="aem client-said")
     m = momentsmod.find(index, target)
     if not m:
@@ -143,7 +146,8 @@ def about(ctx: Context, target: str, quote: str, *, ruling: str | None, source: 
     case = make_case(ctx, level="explicit", ruling=ruling, words=quote, source=source, moment=m, index=index,
                      render_sha256=sha, version=latest["version"] if latest else None,
                      notes=(f"Ours: {ctx.client.contact}'s words about this moment, recorded with client-said --about."
-                            + ("" if ruling else " No keep, change or remove was given: a remark, not a ruling.")))
+                            + ("" if ruling else " No keep, change or remove was given: a remark, not a ruling.")),
+                     extra=extra)
     return append(ctx, case, by="aem client-said")
 
 

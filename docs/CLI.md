@@ -48,21 +48,28 @@ says it did.
 |---|---|
 | `use <client>/<project>` | Checks that the project resolves (registry entry, exact folder name, or a unique `NAME - ` prefix: `joel/P2` finds `P2 - Claude Code`), has a stated frame rate and may be used, and writes the last-used hint (`AEM_HOME` overrides `~/.aem`). It changes nothing a command trusts. In Claude Code, `/aem use` runs it and then pins the project to that session. `use --clear` forgets the hint (`/aem use --clear` drops the session pin). There is no `--path` and no `--fps`: a project is its registered folder, and its frame rate is what the folder states. |
 | `status` | The project, its folder, design system, fps and registry, and **how each was resolved**; the open stage (and whether AEM inferred it) and its time, approvals (standing and stale), ledger edits to review, the last render check, and the status-line text. With no project resolved, it says so and shows the last-used hint, labelled. |
-| `recall [client]` | One screen on a client for a new session: the client's standing preferences (the rules file's rows with the client's `preference_prefix`, Joel's `J-`), the last five rulings in the decisions file, quoted in the client's own words and cut with an ellipsis where long, the open questions for the client (the decisions file's "Open questions" section), and the critic's labelled-case count. Read-only. The plugin shows it at session start. |
+| `recall [client]` | One screen on a client for a new session: how the client reviews (the registry's `review_profile`), how much they directed the last video and this one, what they changed last time (explicit changes on the latest earlier video that has any, by treatment and teaching job, in their words; our note, labelled as ours, where their words were never recorded), their channel-level rulings (newest first), their standing preferences (the rules file's rows with the client's `preference_prefix`, Joel's `J-`), the last five rulings in the decisions file, quoted in the client's own words and cut with an ellipsis where long, the open questions for the client (the decisions file's "Open questions" section), and the critic's labelled-case count. Read-only. The plugin shows it at session start. |
 | `context` | The text the Claude Code plugin adds to the system prompt: the principle, the project, three rules for the agent, and `recall`. |
 | `stage start <gate> [scene] [--switch]` | Opens a stage. Every `stage` action is operator only, including the plugin's `stage auto`, which the plugin runs with a nonce. Gates come from the client's registry entry. `--switch` first finishes the stage open for the same scene (or the whole video); `/stage` always uses it. Any stage AEM inferred finishes first ("superseded"). |
 | `stage end [gate [scene]]` | Closes the named stage, or the most recently opened one. |
 | `stage pause`, `stage resume` | Pause and resume the current stage. `resume` also ends a wait. |
 | `stage wait <who>` | Work waits on someone: `waiting_on_<who>`. Waiting ends at the next start, finish or resume of that gate. `wait blocked` writes the skill's `blocked`. |
 | `stage auto <event>` | Automatic events from the plugin: `session_start`, `session_end` (which also finishes any stage AEM inferred), `prompt`, `turn_start`, `turn_end`, `tool_call` (with `--tool`, `--duration-s`), `idle_start` (with `--since`, the last activity's time), `idle_end`. `--session`, `--turn` and `--origin` record the Claude Code session, turn and prompt origin. |
-| `report [--no-write]` | Writes `<project>/reports/time.md`. |
+| `report [--no-write]` | Writes `<project>/reports/time.md`: per gate, scene, stage group and moment. |
 | `approve <item> [path] [--gate G] [--row NAME] [--label] [--delivery-confirmation]` | Appends an approval for that exact file's SHA-256. Without a path, the item's most recently checked render; without a gate, the open stage's. An image is approved as a still; `--row` approves one row of a plan table in `path`. `--label` also appends the ruling to the client's labelled cases. `--delivery-confirmation` is what the plugin runs when the operator presses Deliver (see [Delivery confirmation](#delivery-confirmation)). Operator only. |
 | `reject <item> --reason TEXT [--path FILE [--row NAME]] [--gate G] [--label]` | Appends a rejection: of that file (or plan row) when given, else of the item's latest approved render, whose approval stops standing. Operator only. |
 | `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated entry to the client's decisions file: the quote exactly as typed, and who typed it and how ("typed by Yuvraj with /client-said in Claude Code" or "in a terminal"). Operator only. |
-| `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
+| `client-said --about MOMENT\|video\|channel [--ruling keep\|change\|remove] --source TEXT` | The same entry (the scope follows from `--about`), and the quote as the client's ruling at that level in the labelled cases: on a moment, an explicit ruling (with `--ruling`; without one, a remark, not a ruling) carrying the moment's latest render SHA-256; on the video or the channel, a remark at that level. What `--about` names is checked before anything is written. Words the decisions file already quotes (whitespace aside; 20 characters or more) are not written again: the ruling names the entry that has them (`decisions_entry`). See [Rulings](#rulings-and-calibration). Operator only. |
+| `accept-video <version> --source TEXT` | The client accepted the delivered video: an implicit acceptance (`ruling: accepted`, `level: implicit`, the render's SHA-256 at that version) for every moment with no explicit keep, change or remove. Once per version. Operator only. |
+| `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove\|note [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval; `state` says `approved`, `stale`, `rejected`, `none` or `missing`. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
-| `import-review <csv> [--fps N/D] [--start-tc TC] [--placements FILE]` | Maps a Frame.io comment export to frames, shots and word IDs. Writes review files and draft labelled cases; never edits the decisions file or the critic's file. |
+| `import-review <csv> [--fps N/D] [--start-tc TC]` | Maps a Frame.io comment export to frames, moments and word IDs: a comment on a moment is a candidate for the client's explicit ruling; one on no moment is a remark about the video. Writes review files and draft labelled cases for the inbox; never edits the decisions file or the critic's file. |
+| `import-review <csv> --notes [--fps N/D] [--start-tc TC]` | The client's timestamped notes on a rough cut: direction, not rulings. Kept as `reviews/<client>/<date>-notes.csv` and `.json`; the moments they cover become "asked". |
+| `moments [--no-write]` | Builds `moments/index.json` (see [Moments](#moments-aem-moments)) and prints the table. |
+| `evidence <render> [--moment ID] [--cue WORD_ID]… [--cue-at SECONDS]…` | Images, sync and facts a critic can read, for one render (see [Evidence](#evidence-aem-evidence)). The sentinel runs it after every render. Open. |
+| `evidence <cut> --video [--offset SECONDS]` | One contact sheet per moment from the assembled cut, and `video.md`. |
+| `calibrate [client]` | What the client's rulings say: acceptance per video, critic agreement, rules (see [Calibration](#rulings-and-calibration)). Read-only. |
 | `observe` | Records one tool call, read as JSON on stdin (`{tool, input, cwd, session, agent}`), and says whether it delivers media with no current approval. Never refuses. The plugin runs it before every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit` and `NotebookEdit` call; see [Observation](#observation). |
 | `rendered` | Checks the renders a finished shell command wrote, read as JSON on stdin (`{command, cwd, started_at, exit_code, probe_only}`). Runs `check-render` on each and returns a toast line and a note for the agent. The plugin runs it after every `Bash` call; see Render sentinel below. |
 | `integrity` | Compares each ledger with what AEM wrote and lists every line AEM did not write, with the agent's observed calls that wrote that file. Exit 1 when there is any. See [Ledger integrity](#ledger-integrity). |
@@ -104,9 +111,13 @@ good place to say where the rate came from).
   "flash": {"min_area_pct": 0.1},
   "placements": "data/edit.json",
   "render_sentinel": {"command_patterns": ["\\bbin/render\\.sh\\b"], "output_dirs": ["renders"]},
-  "stage_inference": {"scene_dirs": ["src", "compositions"]}
+  "stage_inference": {"scene_dirs": ["src", "compositions"]},
+  "moments": {"plan_files": ["visual-plan.md"], "shotlist_files": ["shotlist.md"]},
+  "evidence": {"max_per_command": 6}
 }
 ```
+
+`moments` and `evidence` override the client's registry settings of the same name (below).
 
 Per scene you can also give `frames`, `duration_s`, `width`, `height`, `alpha`. Without a duration,
 `check-render` reads the HyperFrames composition's `data-duration` (found by `scenes.<item>.composition`,
@@ -131,7 +142,9 @@ The skill's line, with the skill's fields first:
 AEM's events: `start`, `finish`, `pause`, `resume`, `waiting_on_<who>`, `blocked`, the automatic
 events above, `stage_inferred` (a gate AEM opened itself: `inferred: true`, `inferred_from` the file),
 `observed` (one per tool call: `tool`, `command`, `reads`, `writes`, `paths`, `delivery`, `session`,
-`agent`), `render_check`, `approval`, `rejection`, `client_said`, `review_import`, `labelled_case`,
+`agent`), `render_check`, `approval`, `rejection`, `client_said` (with `about` and `ruling` when given),
+`review_import`, `notes_import`, `evidence` (`evidence`: the path of `evidence.md`), `evidence_video`,
+`labelled_case` (`case_id`, `level`, `ruling`), `video_accepted` (`version`, `implicit`, `explicit`),
 `inbox_resolved`, `edit_accepted`, and the delivery outcomes `delivery_stopped`, `delivery_held` and
 `delivery_unconfirmed`. Extra fields after the five: `source`, `session`, `tool`, `duration_s`,
 `render`, `render_sha256`, `result`, `via`, `inferred`, `backfilled`. Events entered with `--at` carry
@@ -165,6 +178,11 @@ session time that is none of these) and **unobserved** (stage time when no ledge
 Every number is a difference of recorded timestamps. Overlapping stages of one gate are counted
 once. Open stages are listed and counted to the report time. Stages AEM inferred are counted like
 any other and listed under "Inferred stages" with the file that started each.
+
+**Per stage group and per moment** (1.1.0). The client's `stage_groups` (Joel: design G1–G3, build G4,
+review G5 and G7, placement G6) sum the gates' time. A stage's time belongs to a moment only when the
+stage names it (`/stage G4 fd_S01_next-token`); whole-video stages, and scenes that name no moment, are
+reported as unattributed, never spread across moments.
 
 ### Inferred stages
 
@@ -286,6 +304,9 @@ After every `Bash` call the agent makes while a project is active, the plugin se
   several, the number of stale approvals, and `· G4 inferred` when it opened the stage. The agent reads
   the full result after the command's own output. The status line is redrawn, so its stale count is
   current. Nothing is ever blocked: a failed check is information for the agent and the operator.
+- **Evidence.** Then `aem evidence` runs on each checked render (at most `evidence.max_per_command`, 6
+  for Joel): the operator gets `evidence ready: <moment> v<n>, …` and the agent reads the path of each
+  `evidence.md` after the check.
 
 Limits:
 
@@ -301,6 +322,111 @@ Limits:
 - Every `Bash` call starts one `aem rendered` process (about 0.07 s) even when it is not a render,
   because the decision lives in the CLI, not the plugin.
 
+## Moments (`aem moments`)
+
+A moment is one thing placed in the cut, the unit the client reviews and the work is planned, built and
+timed by. `aem moments` writes `moments/index.json`:
+
+| Field | From |
+|---|---|
+| `id`, `index`, `start`, `end` | the plan's rows (`visual-plan.md`, `shotlist.md`: first cell the moment), else the placements (`data/edit.json`, `data/placements.json`, `renders/*/PLACEMENTS.csv`; the client's `moments.placement_files`, the project's `placements` first). The client's own footage is not a moment of ours unless `include_footage_placements` |
+| `word_ids`, `word_span` | the plan's word-ID column, else the words of `data/words.json` inside the placement |
+| `job`, `why`, `treatment` (animation, footage, screen recording, nothing), `cues`, `rule_ids`, `scene` | the plan's columns, by header name |
+| `contract` | `knows_before`, `knows_after`, `must_stay_true`, `accuracy_limit` (where the picture stops being accurate): the shot list's columns |
+| `asked`, `asked_from`, `notes` | the plan's "asked or added" column; else **note coverage**: asked when one of the client's notes (`import-review --notes`) lies within `review_profile.note_window_s` (1 s) of the moment's words, or a note's range overlaps them; else added. With no notes, every moment is added and the index says so in `note` |
+| `renders` (version, path), `approval` (gate, standing) | `renders/` by item name and version; `approvals.jsonl` |
+| `ruling` | the client's ruling at its level from the labelled cases: explicit (keep, change, remove) over implicit (accepted). A remark with no keep, change or remove is not a ruling; the operator's rulings never count |
+| `critic` | `reviews/<moment>/<version>/critic.json` (`verdict`, `findings`), written by the critic |
+| `time` | stages that name the moment (wall, agent busy, idle…) |
+
+The index also carries `direction` (`full notes` when the notes cover at least half the moments,
+`partial`, `none`; or as stated in `review_profile.direction`), `asked`, `added`, the notes that cover no
+moment (`video_notes`), `unattributed_time`, and `unlinked`: everything it could not link (a render that
+belongs to no moment, a moment with no render for its asset, a moment with no words and no placement, a
+labelled case or approval that names no moment), which the command prints. On P1: 58 moments (8
+placements are Joel's footage), 66 notes covering 50 of them, 8 added; unlinked: one render no
+placement uses (`fd_title-average-question_alpha_v08.mov`).
+
+Limits: a plan is read only as Markdown tables with a header row; a column is found by its header
+words; a moment's words come from the placement's times when the plan names none, so they are as good
+as `data/words.json`; "asked" is a matter of time, so a moment we added over footage the client asked
+for at that time counts as asked (P1's `teach-*` inserts are) unless the plan's "asked or added" column
+says otherwise.
+
+## Evidence (`aem evidence`)
+
+What a render looks like, written for Claude to read. For one render, in `reviews/<moment>/<version>/`:
+
+| File | Holds |
+|---|---|
+| `poses/fNNNN.png`, `phone/fNNNN.png` | one per readable pose (the frame the picture settles on after each cue word, plus the first and last frame), 1920 px wide, and the same at 390 px, a phone held upright. At most 16 |
+| `strip.jpg` | eight frames around the fastest transition, side by side (480 px each) |
+| `sync.json` | per cue word: its onset frame, the frame the picture starts to change, the frame it settles, and the offset in frames (settle − onset) |
+| `facts.json` | the render check: spec, frame count, flashes (frame, area, severity), SHA-256 |
+| `evidence.md` | all of it with relative paths, the moment's contract, the rule IDs it speaks to (the client's `evidence.rules`) and how to report; a critic subagent given this file alone has everything, and is told not to read the scene source |
+
+Cue words come from `--cue-at` (seconds into the scene, for hand-measured onsets), `--cue` (word IDs),
+the plan's cue column, or, when none is written, are inferred from motion (each movement paired with the
+moment's nearest word), and `evidence.md` says which. The toast quotes a sync offset only for real cue
+words: `evidence ready: fd_S04_50ms v09, sync max offset 2f, no flash`, or `no cue words, sync not
+measured`. A readable pose is a run of at least a quarter second in which the mean grey change per
+pixel (160 × 90) stays under 0.08.
+
+`--video` reads the assembled cut and writes `reviews/video/<cut>/NNN-<moment>.jpg`, six frames across
+each moment's word span, and `video.md`.
+
+**Cost, measured** on the 59 P1 v08 masters (423.6 s of 3840 × 2160 at 24000/1001): 120 s in all;
+1.37 s per render (median, 9.9 s the most); 2.4 s per 10 s of scene for MP4 (median; 5.1 s the most, a
+1.3 s title where start-up dominates); 11.9–15.4 s per 10 s for the four ProRes 4444 alpha MOVs, whose
+decode is slower. The P1 film (11:24 at 1080p) gave 58 contact sheets in 8.2 s. It runs after the
+render has finished and is advisory: it blocks nothing and is never a gate.
+
+Limits: the poses are found by stillness, so a scene that never holds still for a quarter second has
+only its first and last frame; inferred cue words are guesses and are labelled so; sync is measured
+against the picture settling, not against a particular element; the strip is around the largest change,
+which may be a cut rather than the transition that matters.
+
+## Rulings and calibration
+
+The client's rulings, at the level they were given (the registry's `review_profile` says how the client
+reviews; Joel reviews the finished video, never individual animations):
+
+| Level | What | Written by |
+|---|---|---|
+| `explicit` | a comment on one moment: `keep`, `change` or `remove`, in the client's words | `inbox accept` of an imported comment; `client-said --about <moment> --ruling …` |
+| `implicit` | the video accepted with no comment on the moment: `accepted` | `accept-video`, once the whole video is accepted; silence is never written as explicit |
+| `video` | a remark about the video as a whole | `inbox accept --ruling note` of a comment on no moment; `client-said --about video` |
+| `channel` | a remark about the editor or how to work for the channel | `client-said --about channel` |
+
+Each is a line in the client's `critic/labelled-cases.jsonl`, in that file's field names (`case_id`,
+`status`, `video`, `shot`, `word_ids`, `render_sha256`, `ruling`, `joel_words`, `ruling_date`, `source`,
+`rule_ids`, `critic_verdict_g5`, `critic_agreed`, `notes`), plus AEM's: `moment`, `level`, `asked`
+(`asked` or `added`), `direction`, `version`, `critic_findings`. `status` is `labelled` only for an
+explicit keep, change or remove with the client's words and the render's SHA-256.
+
+`aem calibrate [client]` reads every registered project's moments and the labelled cases, and prints:
+
+- **Acceptance per video:** moments delivered, explicitly changed, explicitly kept, implicitly
+  accepted, not ruled; then `N of M additions changed, K of L asked`, and the same by treatment and by
+  teaching job.
+- **Critic agreement:** for ruled moments with a `critic.json` on the version the client saw: changed
+  and flagged (hits), changed but not flagged (misses), accepted but flagged (false alarms), and a
+  weighted agreement in which an explicit ruling weighs 1 and an implicit acceptance 0.25. With no
+  critic findings it says "untested".
+- **Rules:** per rule ID, the rulings that involve it (the moment's rule IDs, the case's, the critic's
+  findings), how many the client's words confirm and how many overrule the critic, or untested. An
+  inferred or unconfirmed rule that rulings now support or contradict is printed as a proposed line of
+  the rules file with the decisions-file entry it rests on. AEM never edits the rules file.
+
+Under 30 explicit cases (M-19) every figure carries its count and "development data, not evidence";
+with no rulings it says so and stops. Operator rulings are counted apart and left out; a remark with no
+keep, change or remove is counted as a remark. On P1 after `accept-video v08`: 3 explicit, 55 implicit;
+`0 of 8 additions changed, 3 of 50 asked`; M-26 and B-29 "suggested by rulings, unconfirmed".
+
+Limits: "asked" is note coverage (see Moments); the critic can be scored only where it wrote
+`critic.json`; a rule is linked to a ruling only through rule IDs someone wrote down (the case, the
+plan, the critic); one video's rulings say little about the next.
+
 ## Review inbox (`aem inbox`)
 
 Off unless the plugin's **Review inbox** setting is on (`reviewInbox`, default off). Then `/inbox`
@@ -312,20 +438,22 @@ it and runs the commands each item names.
 | Plan row (G2) | A row of a table in the plan files (`review_inbox.plan_files`, default `shotlist.md`; Joel also `visual-plan.md`) whose text has no approval or rejection. The row is named by its first cell. Changing an approved row's text puts it back, marked "changed since it was approved". | `aem approve <row> <file> --row <row> --gate G2 --label` | `aem reject <row> --path <file> --row <row> --gate G2 --label --reason …` |
 | Still (G3) | An image under `stills/` (`review_inbox.stills_dirs`) whose SHA-256 has no ruling. | `aem approve <item> <file> --gate G3 --label` | `aem reject <item> --path <file> --gate G3 --label --reason …` |
 | Render (G4) | A scene's last `render_check`, if the file is unchanged since and its SHA-256 has no ruling. Failed checks are listed with the failure. | `aem approve <scene> <file> --gate G4 --label` | `aem reject <scene> --path <file> --gate G4 --label --reason …` |
-| Client comment | A draft from `aem import-review` (`reviews/<client>/*-labelled-cases.draft.jsonl`) not yet ruled on. Buttons Keep, Change, Remove. | `aem inbox accept <id> --ruling keep\|change\|remove --label` | `aem inbox dismiss <id> --label --reason …` |
+| Client comment | A draft from `aem import-review` (`reviews/<client>/*-labelled-cases.draft.jsonl`) not yet ruled on: one per moment with its comments (Keep, Change, Remove), one per comment on no moment (Record, a remark about the video). | `aem inbox accept <id> --ruling keep\|change\|remove\|note --label` | `aem inbox dismiss <id> --label --reason …` |
 
 Gates come from `review_inbox.gates`. A button whose command is not `approve`, `reject` or `inbox` is
 refused by the plugin.
 
 **Labelled cases.** Every ruling made with `--label` appends one line to the client's
-`critic/labelled-cases.jsonl`, in that file's own field names (read from its header line), with
-`"source"` set to the operator's id (`"yuvraj"`). AEM adds `item_kind`, `gate`, `reason`, and where
-they apply `decision`, `inbox_ref`, `plan_file`, `plan_row`, `plan_row_sha256`, `words_source`. These
-lines are `"status": "development case"`: they are the operator's rulings, not the client's, so they
-never count toward the critic's labelled set (M-19), and the client's words field stays null. An
-accepted client comment keeps the client's words verbatim from the CSV (`words_source` says which
-rows), takes the shot's latest approved render's SHA-256, and is `"labelled"` only when it has the
-ruling, the words and that SHA-256. `"ruling"` is `keep` (approved) or `change` (rejected) for plan
+`critic/labelled-cases.jsonl`, in that file's own field names (read from its header line). A ruling
+on a plan row, still or render is the operator's: `"source"` is the operator's id (`"yuvraj"`), `"level"`
+is `"operator"`, and AEM adds `item_kind`, `gate`, `reason`, and where they apply `decision`,
+`inbox_ref`, `plan_file`, `plan_row`, `plan_row_sha256`. These lines are `"status": "development
+case"`: they are ours, not the client's, so they never count toward the critic's labelled set (M-19) or
+in `calibrate`, and the client's words field stays null. An accepted client comment is the client's
+ruling at its level (see [Rulings](#rulings-and-calibration)): the words verbatim from the CSV,
+`"source"` the CSV rows they came from, `"ruled_by"` the operator who read them, the moment's approved
+render's SHA-256 (or, with no approval, its latest render's), and `"labelled"` only when it has an
+explicit keep, change or remove, the words and that SHA-256. `"ruling"` is `keep` (approved) or `change` (rejected) for plan
 rows, stills and renders, and the button's ruling for a client comment.
 
 Limits: the list is read when `/inbox` runs and after each button, not live; a plan table is
@@ -336,8 +464,8 @@ pane; `aem inbox accept`/`dismiss` from the agent's shell is refused by the CLI 
 
 ## Operator-only commands
 
-`approve`, `reject`, `client-said`, `stage` (every action), `accept-edit`, `new-client`, `inbox accept`
-and `inbox dismiss` write the record: approvals, rulings, the client's words, stages, accepted ledger
+`approve`, `reject`, `client-said`, `stage` (every action), `accept-edit`, `accept-video`, `new-client`,
+`inbox accept` and `inbox dismiss` write the record: approvals, rulings, the client's words, stages, accepted ledger
 edits, the registry. They are the only commands the agent cannot run, and the only ones that matter,
 because they are what makes the record the operator's. **The CLI itself refuses them** unless the
 operator is shown to be running them, checked at the entry of the command (and again inside the

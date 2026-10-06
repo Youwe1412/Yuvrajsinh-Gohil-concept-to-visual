@@ -4,4 +4,4 @@ AEM observes and records: it remembers, measures and checks, and never blocks wo
 library only. ffprobe and ffmpeg are called for render checks.
 """
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"

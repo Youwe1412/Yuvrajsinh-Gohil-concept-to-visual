@@ -61,6 +61,13 @@ never stored there: it comes from the folder you work in (register each project 
 registry), `AEM_PROJECT`, or the plugin's session pin. Give each client's decisions file an "Open
 questions for <contact>" section: `aem recall` lists it at the start of every session.
 
+Since 1.1.0 four optional keys say more about a client (Joel's entry has all four; the template shows
+them): `review_profile`, how the client reviews (the unit they review, where approval and notes arrive,
+whether they see the process, how close a note must be to a moment's words, how much they directed
+each video); `moments`, where the plan and placements are; `stage_groups`, which gates are design,
+build, review and placement; and `evidence`, the rule IDs evidence speaks to and how many renders one
+command may build evidence for.
+
 ## 4. Install the Claude Code plugin
 
 The repository is a plugin marketplace named `aavkar-productions`
@@ -85,7 +92,7 @@ claude plugin install aavkar-educational-motion-studio@aavkar-productions
 
 Tested on 6 October 2026 with Claude Code 2.1.288: the marketplace added and the plugin installed and
 enabled (0.7.0 in an isolated config folder, then 0.9.0 and 1.0.0 for the operator with
-`claude plugin update`).
+`claude plugin update`; 1.1.0 on 7 October 2026).
 
 ### Plugin settings
 
@@ -153,7 +160,7 @@ changed during the run.
 aem drift --client joel
 ```
 
-Start Claude Code in a registered project's folder: you should get one toast, `AEM 1.0.0 ·
+Start Claude Code in a registered project's folder: you should get one toast, `AEM 1.1.0 ·
 <client>/<project> · resolved from folder`, the client's recall in the transcript (`AEM recall · …`),
 and the status line `AEM · <client> · <project> · …`. No toast means the plugin is not loaded in that
 session. `/aem status` answers either way once it is.
@@ -163,7 +170,9 @@ session. `/aem status` answers either way once it is.
 Pull the repository; the command updates at once (it is a link). **The plugin does not**, and the two
 must match: a 0.9 plugin against the 1.0 command asks for `aem guard` and `aem authority`, which no
 longer exist, so it toasts on every call (it blocks nothing, but records nothing either), and a plugin
-older than 0.8 has its slash commands refused ("no operator nonce"). Update it, then start new sessions:
+older than 0.8 has its slash commands refused ("no operator nonce"). A 1.0 plugin against the 1.1
+command works, without `/accept-video`, `/client-said --about`, `/aem calibrate`, the moment counts on
+the status line or the evidence toast. Update it, then start new sessions:
 
 ```bash
 claude plugin marketplace update aavkar-productions
@@ -173,7 +182,7 @@ claude plugin marketplace update aavkar-productions
 claude plugin update aavkar-educational-motion-studio@aavkar-productions
 ```
 
-`claude plugin list` should then say version 1.0.0. Remove the plugin with `/plugin uninstall
+`claude plugin list` should then say version 1.1.0. Remove the plugin with `/plugin uninstall
 aavkar-educational-motion-studio@aavkar-productions`, the command by deleting the
 `~/.local/bin/aem` link, and the Codex hooks by deleting AEM's `[hooks]` entries. AEM's ledgers live
 in the projects and stay.

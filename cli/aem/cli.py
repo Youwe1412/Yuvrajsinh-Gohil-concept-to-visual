@@ -385,7 +385,8 @@ def cmd_client_said(a):
     ctx = registry.context(a)
     quote = sys.stdin.read()
     r = clients.client_said(ctx, quote, scope=a.scope, source=a.source, item=a.item, about=a.about, ruling=a.ruling)
-    text = f"Recorded in {r['file']} ({r['placed']}): {r['heading']}"
+    text = (f"Already in {r['file']}: {r['heading']} (not written again)" if r.get("existing_entry")
+            else f"Recorded in {r['file']} ({r['placed']}): {r['heading']}")
     if r.get("case"):
         c = r["case"]
         text += f"\n  and as a {c['level']} ruling" + (f" ({c['ruling']})" if c.get("ruling") else "") + \

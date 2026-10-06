@@ -5,7 +5,7 @@ import type { AemHeld, AemInbox, AemLedger, AemStatusParts, AemView } from '../t
 import { sha256Hex } from './sha256'
 
 export const PLUGIN = 'aavkar-educational-motion-studio'
-export const PLUGIN_VERSION = '1.0.0'
+export const PLUGIN_VERSION = '1.1.0'
 
 export type Json = { [key: string]: unknown }
 
