@@ -1,5 +1,11 @@
 # Aavkar Educational Motion Studio
 
+> **Capstone status, 7 Oct 2026** (100x Engineers C7, "Concept to Visual"): the case study is
+> [docs/CASE-STUDY.md](docs/CASE-STUDY.md); the whole picture of AEM is [docs/ABOUT.md](docs/ABOUT.md);
+> P2's hypothesis is [docs/P2-HYPOTHESIS.md](docs/P2-HYPOTHESIS.md), copied from P2's `HYPOTHESIS.md`
+> (SHA-256 `95c1003974d4885d961471dbbfce4470f6a11bfbd63d7821eb0215115ec484c2`, recorded in P2's `inputs.md`);
+> P2's measured state is [docs/P2-STATUS.md](docs/P2-STATUS.md). Updated after Joel's Frame.io review.
+
 > **AEM observes and records. It never blocks work in a session the operator is sitting in. The record
 > is the product: Joel's rulings in his words, approvals tied to the exact render, the critic's
 > labelled cases, time per stage. The only interruption is a confirmation before delivering a render
