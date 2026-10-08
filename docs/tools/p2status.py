@@ -1,5 +1,7 @@
 import json,sys,re,collections
 moments_json, events_path, time_md, out = sys.argv[1:5]
+asof = sys.argv[5] if len(sys.argv)>5 else "7 Oct 2026, 23:50 IST"
+approvals_path = sys.argv[6] if len(sys.argv)>6 else None
 j=json.load(open(moments_json))
 ms=[m for m in j["moments"] if str(m.get("name","")).startswith("cc_S")]
 artefacts=len(j["moments"])-len(ms)
@@ -10,6 +12,15 @@ for line in open(events_path):
     if e.get("event")=="render_check": rc[e["render"]]=e
     elif e.get("event")=="evidence": ev[e["render"]]=e
     elif e.get("event")=="approval": approved[e.get("render")]=e
+stale={}
+if approvals_path:
+    approved={}
+    for line in open(approvals_path):
+        try: a=json.loads(line)
+        except: continue
+        if a.get("type")=="approval": approved[a["render"]]=a
+        elif a.get("type")=="stale": stale[a["render"]]=a
+    for r in stale: approved.pop(r,None)
 latest={}
 for r,e in rc.items():
     s=e["scene"]
@@ -34,7 +45,7 @@ built=len(latest)
 L=[]
 L.append("# P2 status · Claude Code video · MergeToMaster")
 L.append("")
-L.append("Status as of 7 Oct 2026, 23:50 IST. Generated from `aem moments` (`moments/index.json`), `aem report` (`reports/time.md`) and `events.jsonl` in the P2 project folder by `docs/tools/p2status.py`. Joel's Frame.io review is pending; this page is updated after it.")
+L.append(f"Status as of {asof}. Generated from `aem moments` (`moments/index.json`), `aem report` (`reports/time.md`) and `events.jsonl` in the P2 project folder by `docs/tools/p2status.py`. Joel's Frame.io review is pending; this page is updated after it.")
 L.append("")
 L.append("## Counts (measured by AEM unless marked)")
 L.append("")
@@ -44,7 +55,9 @@ L.append(f"- Direction: {j.get('direction')} ({j.get('notes',0)} notes from Joel
 L.append(f"- Moments with at least one render checked: **{built}**; render versions checked: **{len(rc)}**; check failures: **{sum(1 for e in rc.values() if e['result']!='pass')}**.")
 L.append(f"- Evidence runs (`aem evidence`): **{len(ev)}** renders.")
 L.append(f"- Render versions where `check-render` flagged one- or two-frame luma flashes (area 0.02–0.04 % of frame): **{len(flash_renders)}**; the evidence notes record no flash for any render.")
-L.append(f"- Standing approvals: **{len(approved)}** (" + ", ".join(e.get('render','').split('/')[-1]+f" · {e.get('via')}" for e in approved.values()) + ").")
+L.append(f"- Standing approvals: **{len(approved)}**" + (" (" + ", ".join(e.get('render','').split('/')[-1]+f" · {e.get('via')}" for e in approved.values()) + ")" if approved else "") + f"; stale: **{len(stale)}**" + (" (" + ", ".join(r.split('/')[-1]+" superseded by "+str(a.get('superseded_by_render','a newer render')).split('/')[-1] for r,a in stale.items()) + ")" if stale else "") + ".")
+fails=[(r.split('/')[-1], e.get('note')) for r,e in rc.items() if e['result']!='pass']
+if fails: L.append("- Failed checks: " + "; ".join(f"`{r}` ({n})" for r,n in fails) + ".")
 L.append(f"- Rulings from Joel on P2: **0** (review pending).")
 L.append("")
 L.append("## Time per gate (measured by AEM, `aem report`)")
@@ -70,6 +83,9 @@ L.append("|---|---|---|---|---:|")
 for r in sorted(rc):
     L.append(f"| {r.split('/')[-1]} | {rc[r]['result']} | {'yes' if r in flash_renders else 'no'} | {sync(r)} | {ev.get(r,{}).get('seconds','-')} |")
 L.append("")
-L.append("Note: at snapshot time the P2 `renders/` folder and the per-version `reviews/<moment>/vNN/` evidence folders are not on disk; the record of each check and evidence run (render SHA-256, result, flashes, sync note, seconds) is in `events.jsonl`, and the HyperFrames `check` results in `reviews/checks/<moment>.json` (30 files, 29 ok, `cc_S04_agent-file` not ok).")
+import os
+rd=os.path.join(os.path.dirname(events_path),"renders")
+ondisk=len([f for f in os.listdir(rd) if f.endswith(".mp4") and not f.startswith("._")]) if os.path.isdir(rd) else 0
+L.append(f"Note: {ondisk} render files are in the P2 `renders/` folder at snapshot time (the latest version of each built moment; older versions were removed). The record of every check and evidence run (render SHA-256, result, flashes, sync note, seconds) is in `events.jsonl`.")
 open(out,"w").write("\n".join(L)+"\n")
 print("rows",len(rows),"built",built,"rc",len(rc),"flash",len(flash_renders),"approved",len(approved),"treat",dict(treat))
