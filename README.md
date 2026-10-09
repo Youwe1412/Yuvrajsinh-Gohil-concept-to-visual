@@ -6,7 +6,8 @@
 > (SHA-256 `95c1003974d4885d961471dbbfce4470f6a11bfbd63d7821eb0215115ec484c2`, recorded in P2's `inputs.md`);
 > P2's measured state is [docs/P2-STATUS.md](docs/P2-STATUS.md) (34 of 35 visual moments built, 72 render checks);
 > the animations themselves, as AEM's evidence frames show them, are in [docs/showcase](docs/showcase/README.md).
-> Demo: the P1 video delivered to Joel (the submitted link) and the P2 showcase with 1080p proxies ([docs/showcase](docs/showcase/README.md)). Updated after Joel's Frame.io review.
+> Demo: the P1 video delivered to Joel (the submitted link) and the P2 showcase with 1080p proxies ([docs/showcase](docs/showcase/README.md)).
+> The same workflow on two other creators, anonymized: [CASE-STUDY §j](docs/CASE-STUDY.md#j-beyond-joel-the-same-workflow-on-two-other-creators-outside-the-measured-run). Updated after Joel's Frame.io review.
 
 > **AEM observes and records. It never blocks work in a session the operator is sitting in. The record
 > is the product: Joel's rulings in his words, approvals tied to the exact render, the critic's
