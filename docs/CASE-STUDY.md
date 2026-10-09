@@ -1,8 +1,10 @@
 # Concept to Visual: a Creator OS capstone (100x Engineers C7)
 
-**Status as of 9 Oct 2026, 12:30 IST (first written 7 Oct 2026, 23:50 IST). Joel's Frame.io review is pending; this page is updated after it.**
+**Status as of 9 Oct 2026, 23:50 IST (first written 7 Oct 2026, 23:50 IST). Joel's Frame.io review is pending; this page is updated after it.**
 
-Every number links to its file. **Measured by AEM**: written by the tool from timestamps or file reads. **Reconstructed**: counted by hand afterwards. Client-folder figures are mirrored in [P2-STATUS.md](P2-STATUS.md) and the [snapshot](design-system-snapshot/SNAPSHOT.md).
+**Changelog since submission.** 8 Oct: renders restored; placement FCPXML generated. 9 Oct: 44 renders (3 alpha overlays); 5 moments added; showcase rebuilt; approvals 0 standing at 23:50 ([P2-STATUS.md](P2-STATUS.md)).
+
+Every number links to its file. **Measured by AEM**: written by the tool from timestamps or file reads. **Reconstructed**: counted by hand. Client-folder figures are mirrored in [P2-STATUS.md](P2-STATUS.md) and the [snapshot](design-system-snapshot/SNAPSHOT.md).
 
 ## a. The trust signal
 
@@ -10,11 +12,11 @@ On P1 Joel gave 66 timestamped Frame.io notes ([ABOUT.md §13.1](ABOUT.md), [joe
 
 > "I really liked what you did with the other video so id like to try you mostly just adding in visuals that you feel like are appropriate at the time rather than me commenting what should go where."
 
-On P2 he gave zero placement notes ([P2-STATUS.md](P2-STATUS.md)). That is the creator moving from directing every placement to accepting the editor's recorded standard: the Creator OS hypothesis in his own words. P2 is the first test of that standard without his direction.
+On P2 he gave zero placement notes ([P2-STATUS.md](P2-STATUS.md)). That is the creator moving from directing every placement to accepting the editor's recorded standard: the Creator OS hypothesis in his words. P2 is the first test without his direction.
 
 ## b. The creator and the friction
 
-Joel Belton runs MergeToMaster, narrated essays on AI and developer topics ([SKILL.md](design-system-snapshot/skill/mergetomaster-studio/SKILL.md)); 92 published pieces (operator-stated, not in a repo file). He reviews the finished video on Frame.io, never individual animations, and never sees the process ([ABOUT.md §13.1](ABOUT.md)). P1, "Frontend Design", published 23 Sept 2026 ([p1-frontend-design.md](design-system-snapshot/skill/mergetomaster-studio/references/p1-frontend-design.md)). The friction: 66 notes for 58 visuals is the creator doing the editor's job.
+Joel Belton runs MergeToMaster, narrated essays on AI and developer topics ([SKILL.md](design-system-snapshot/skill/mergetomaster-studio/SKILL.md)); 92 published pieces (operator-stated). He reviews the finished video on Frame.io, never individual animations, and never sees the process ([ABOUT.md §13.1](ABOUT.md)). P1, "Frontend Design", published 23 Sept 2026 ([p1-frontend-design.md](design-system-snapshot/skill/mergetomaster-studio/references/p1-frontend-design.md)). The friction: 66 notes for 58 visuals is the creator doing the editor's job.
 
 ## c. Hypothesis
 
@@ -24,54 +26,52 @@ From [P2-HYPOTHESIS.md](P2-HYPOTHESIS.md), written 7 Oct 2026 at G1 before any m
 
 ## d. What was built
 
-- **Design system v3.2**: [rules.md](design-system-snapshot/rules.md), 87 rule IDs with J/E/P/I tags (reconstructed count), indexing the Brand, Motion and Edit Systems ([text exports](design-system-snapshot/text/)); [joel-decisions.md](design-system-snapshot/joel-decisions.md), Joel's rulings verbatim, newest first.
+- **Design system v3.2**: [rules.md](design-system-snapshot/rules.md), 87 rule IDs with J/E/P/I tags, indexing the Brand, Motion and Edit Systems ([text exports](design-system-snapshot/text/)); [joel-decisions.md](design-system-snapshot/joel-decisions.md), Joel's rulings verbatim.
 - **The `mergetomaster-studio` skill**, seven gates G1 Inputs to G7 Joel's review ([SKILL.md](design-system-snapshot/skill/mergetomaster-studio/SKILL.md)).
-- **AEM 1.1.0 as a notary**: observes and records, never blocks ([ABOUT.md](ABOUT.md)); check and evidence per render ([CLI.md](CLI.md)); moments as the unit of work; `aem calibrate` reads the client's rulings. No client hardcoded ([registry/clients.json](../registry/clients.json)).
+- **AEM 1.1.0 as a notary**: observes and records, never blocks ([ABOUT.md](ABOUT.md)); check and evidence per render ([CLI.md](CLI.md)); moments as the unit of work; `aem calibrate` reads the client's rulings ([registry/clients.json](../registry/clients.json)).
 - **Tests**: 218 CLI and 54 plugin tests pass at 1.1.0 ([ABOUT.md §8](ABOUT.md), [tests/](../tests), [plugin](../plugin/aavkar-educational-motion-studio/tests)).
 
 ## e. P1 baseline, reconstructed
 
-From P1's real placement files ([ABOUT.md §13.2](ABOUT.md), [tests/fixtures/p1](../tests/fixtures/p1)): 58 moments, 50 asked, 8 added. Joel's 3 changes ([joel-decisions.md](design-system-snapshot/joel-decisions.md), entry 2026-09-14) all removed unrequested detail inside asked scenes: a one-frame website flash, two captions describing a visible demo. No addition was removed. Lesson: nothing the viewer didn't need. Retrospective counts, not AEM measurements.
+From P1's real placement files ([ABOUT.md §13.2](ABOUT.md), [tests/fixtures/p1](../tests/fixtures/p1)): 58 moments, 50 asked, 8 added. Joel's 3 changes ([joel-decisions.md](design-system-snapshot/joel-decisions.md), entry 2026-09-14) all removed unrequested detail inside asked scenes: a one-frame website flash, two captions describing a visible demo. No addition was removed. Lesson: nothing the viewer didn't need. Retrospective counts.
 
 ## f. P2 so far
 
-All from [P2-STATUS.md](P2-STATUS.md), generated by [p2status.py](tools/p2status.py) from `aem moments`, `aem report` and `events.jsonl`. The 18 animations: [showcase](showcase/README.md).
+All from [P2-STATUS.md](P2-STATUS.md), generated by [p2status.py](tools/p2status.py) from `aem moments`, `aem report` and `events.jsonl`. The animations: [showcase](showcase/README.md).
 
 | Figure | Value | Source |
 |---|---|---|
-| Named moments planned | 42 (35 visual, 7 "nothing") | `aem moments`, measured |
-| Treatments | animation 18, screen recording 8, nothing 7, Joel's terminal re-typeset 5, footage 4 | `aem moments`, measured |
-| Moments with a checked render | 34 of 35 visual | `events.jsonl`, measured |
-| Render versions checked / failed | 72 / 1 (`cc_S08_skills-list_v03`, 3 short flashes) | `events.jsonl`, measured |
-| Approved renders | 0 standing; 1 stale (`cc_S00_agenda_v02`, superseded by v03 on 8 Oct) | `approvals.jsonl`, measured |
-| G2 (plan) wall / agent busy | 1:48:17 / 1:12:47 | `aem report`, measured |
+| Named moments planned | 47 (40 visual, 6 "nothing") | `aem moments`, measured |
+| Treatments | animation 20, footage 8 (3 alpha overlays), screen recording 8, nothing 6, re-typeset terminal 5 | `aem moments`, measured |
+| Moments with a checked render | 39 of 40 visual; 44 render files | `events.jsonl`, measured |
+| Render versions checked / failed | 79 / 5 (3 short flashes; 4 overlays the spec did not expect alpha on) | `events.jsonl`, measured |
+| Approved renders | 0 standing at 23:50; 1 stale (`cc_S00_agenda_v02`, superseded by v03) | `approvals.jsonl`, measured |
+| G2 (plan) wall / agent busy | 11:43:58 / 2:39:12 (8:49 idle) | `aem report`, measured |
 | G4 (build) wall / agent busy | 5:33:57 / 5:11:14 | `aem report`, measured |
-| Minutes per built moment | about 10 wall (5:33:57 ÷ 34); 29:06:14 of session time ran outside any stage | reconstructed |
+| Minutes per built moment | about 9 wall (5:33:57 ÷ 39); 33 of 50 observed hours ran outside any stage | reconstructed |
 | Baseline-by-hand minutes | none: the hand-made baseline was dropped on 7 Oct (P2 `inputs.md`) | measured absence |
-| Flash scans | 12 of 72 render versions flagged 1–2 frame luma flashes at 0.02–0.04 % of frame | `check-render`, measured |
+| Flash scans | 14 of 79 render versions flagged 1–2 frame luma flashes at 0.02–0.04 % of frame | `check-render`, measured |
 | Max sync offset, latest renders | 0f to 36f at 25 fps | `aem evidence`, measured |
 
 ## g. Negative results and what they changed
 
-- **The guard blocked a day's work and was removed.** 0.7.0 built it; 1.0.0 made AEM a notary ([ABOUT.md §12](ABOUT.md), commit `705c5b3`). P2's `events.jsonl` holds 5 denials from 6 Oct.
-- **The "3 of 13 additions" claim was wrong.** The brief expected 45 asked and 13 added; the real placements give 50 and 8, and the 3 changes sat inside asked scenes ([ABOUT.md §13.2](ABOUT.md)). `aem calibrate` still prints "3 of 58 additions" for P1 (no plan column): development data, not evidence.
+- **The guard blocked a day's work and was removed.** 0.7.0 built it; 1.0.0 made AEM a notary ([ABOUT.md §12](ABOUT.md), commit `705c5b3`). 5 denials from 6 Oct remain in `events.jsonl`.
+- **The "3 of 13 additions" claim was wrong.** The brief expected 45 asked and 13 added; the real placements give 50 and 8, and the 3 changes sat inside asked scenes ([ABOUT.md §13.2](ABOUT.md)). `aem calibrate` still prints "3 of 58" for P1: development data.
 - **P1 numbers are retrospective.** AEM postdates P1.
-- **The hand-made baseline does not exist.** The baseline moments were built by the pipeline (P2 `inputs.md`); the control is gone.
-- **`aem moments` over-counts.** 64 rows for 42 moments; 22 are table headings parsed from the plan ([P2-STATUS.md](P2-STATUS.md)). Defect.
-- **Renders were off disk at the 7 Oct snapshot.** On 9 Oct the 34 latest renders and their evidence are back; every check's record stands in `events.jsonl`.
+- **The hand-made baseline does not exist.** Built by the pipeline instead (P2 `inputs.md`); the control is gone.
+- **`aem moments` over-counts.** 68 rows for 47 moments; 21 are table headings from the plan ([P2-STATUS.md](P2-STATUS.md)).
+- **Renders were off disk at the 7 Oct snapshot.** Back on 9 Oct; every check's record stands in `events.jsonl`.
 
 ## h. Not done
 
-- P2 delivery: 0 standing approvals; no FCPXML placed yet.
+- P2 delivery: 0 standing approvals. A placement FCPXML was generated on 8 Oct but not imported into Final Cut; the renders it references have since changed, so it is regenerated after approvals.
 - Joel's review of P2 (no rulings yet).
-- An external operator run.
-- Critic calibration: 3 development cases, 0 explicit rulings in Joel's words; `calibrate` needs 30 ([ABOUT.md §13](ABOUT.md)).
+- Critic calibration: 3 development cases, 0 rulings in Joel's words; `calibrate` needs 30 ([ABOUT.md §13](ABOUT.md)).
 - The full acceptance test ([tests/acceptance](../tests/acceptance)).
 
 ## i. Next
 
-- 9 Oct 2026: approve the 34 renders, fix `cc_S08_skills-list`, place the FCPXML, deliver to Frame.io.
-- On Joel's review (date his): `aem import-review` his comments; `aem accept-video` for the rest.
-- Same day: `aem calibrate`; this page updated.
-- 9 Oct 2026: an external operator builds one moment.
-- 9 Oct deadline, where possible: acceptance test, moments parser fix.
+- 10 Oct 2026: approvals, fix `cc_S08_skills-list`, FCPXML from approved renders, Final Cut import, delivery to Frame.io.
+- 10 Oct 2026: external-operator run on one moment; hand-timed baseline moment.
+- Joel's review, when it lands: `aem import-review`, `aem accept-video`, `aem calibrate`; §a and §h in his words.
+- Updates continue through Demo Day, 11 Oct.

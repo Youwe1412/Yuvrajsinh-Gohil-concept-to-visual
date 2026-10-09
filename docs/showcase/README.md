@@ -1,15 +1,20 @@
 # P2 showcase · the animations, as AEM's evidence shows them
 
-Status as of 9 Oct 2026. Each moment below is an animation this pipeline built for Joel Belton's Claude Code video (P2). The frames are **readable poses** that `aem evidence` extracted from the latest checked render (a pose is where the picture settles for a quarter second), downscaled to 960 px, plus the **strip** of frames around the fastest transition. Nothing here is Joel's footage or his terminal; those moments are left out on purpose. The renders themselves (3840x2160, 25 fps) stay in the project folder; where a 1080p proxy is linked, GitHub plays it on the file page. Max sync is the largest offset, in frames, between a cue word's onset and the pose settling on it.
+Status as of 9 Oct 2026, 23:40 IST. Each moment below is an animation this pipeline built for Joel Belton's Claude Code video (P2). The frames are **readable poses** that `aem evidence` extracted from the latest checked render (a pose is where the picture settles for a quarter second), downscaled to 960 px, plus the **strip** of frames around the fastest transition. Nothing here is Joel's footage or his terminal; those moments are left out on purpose. Three moments (promise, exceptions, model-fit) are alpha overlays drawn over his face, rendered as ProRes 4444 `.mov`; their proxies are flattened on black. The renders themselves (3840x2160, 25 fps) stay in the project folder; where a 1080p proxy is linked, GitHub plays it on the file page. Max sync is the largest offset, in frames, between a cue word's onset and the pose settling on it.
 
-18 animation moments. Measured state: [P2-STATUS.md](../P2-STATUS.md); method: [CASE-STUDY.md](../CASE-STUDY.md). Built by `docs/tools/showcase.py`.
+23 moments (3 alpha overlays). Measured state: [P2-STATUS.md](../P2-STATUS.md); method: [CASE-STUDY.md](../CASE-STUDY.md). Built by `docs/tools/showcase.py`.
 
 | Moment | Teaching job | Latest render | Check | Max sync | Poses | Video |
 |---|---|---|---|---|---:|---|
+| [cc_S00_promise](#ccs00promise) | Hook | `cc_S00_promise_v02.mov` | fail (newer cc_S00_promise_v03.mov on disk, not yet checked) | 3f | 6 | [1080p](video/cc_S00_promise.mp4) |
 | [cc_S00_agenda](#ccs00agenda) | Hook | `cc_S00_agenda_v03.mp4` | pass | 17f | 8 | [1080p](video/cc_S00_agenda.mp4) |
 | [cc_S01_three-dials](#ccs01threedials) | Cast of characters | `cc_S01_three-dials_v03.mp4` | pass | 9f | 6 | [1080p](video/cc_S01_three-dials.mp4) |
+| [cc_S01_plan-vs-accept](#ccs01planvsaccept) | Comparison | `cc_S01_plan-vs-accept_v03.mp4` | pass | 31f | 11 | [1080p](video/cc_S01_plan-vs-accept.mp4) |
 | [cc_S01_model](#ccs01model) | Cast of characters | `cc_S01_model_v01.mp4` | pass | 11f | 5 | [1080p](video/cc_S01_model.mp4) |
+| [cc_S01_model-fit](#ccs01modelfit) | Verdict | `cc_S01_model-fit_v01.mov` | fail (newer cc_S01_model-fit_v02.mov on disk, not yet checked) | not measured | 3 | [1080p](video/cc_S01_model-fit.mp4) |
 | [cc_S01_effort-levels](#ccs01effortlevels) | Comparison / statistic | `cc_S01_effort-levels_v04.mp4` | pass | 1f | 12 | [1080p](video/cc_S01_effort-levels.mp4) |
+| [cc_S01_exceptions](#ccs01exceptions) | Comparison | `cc_S01_exceptions_v01.mov` | fail (newer cc_S01_exceptions_v03.mov on disk, not yet checked) | not measured | 17 | [1080p](video/cc_S01_exceptions.mp4) |
+| [cc_S02_branch-fork](#ccs02branchfork) | Mechanism | `cc_S02_branch-fork_v01.mp4` | pass | not measured | 13 | [1080p](video/cc_S02_branch-fork.mp4) |
 | [cc_S03_window](#ccs03window) | Cast of characters → mechanism | `cc_S03_window_v01.mp4` | pass | 49f | 10 | [1080p](video/cc_S03_window.mp4) |
 | [cc_S03_40-60](#ccs034060) | Comparison / statistic | `cc_S03_40-60_v01.mp4` | pass | 7f | 4 | [1080p](video/cc_S03_40-60.mp4) |
 | [cc_S04_offload](#ccs04offload) | Comparison (mechanism) | `cc_S04_offload_v01.mp4` | pass | 25f | 17 | [1080p](video/cc_S04_offload.mp4) |
@@ -24,6 +29,18 @@ Status as of 9 Oct 2026. Each moment below is an animation this pipeline built f
 | [cc_S07_course-correct](#ccs07coursecorrect) | Procedure / UI demo | `cc_S07_course-correct_v03.mp4` | pass | 28f | 4 | [1080p](video/cc_S07_course-correct.mp4) |
 | [cc_S07_ask-questions](#ccs07askquestions) | Procedure / UI demo | `cc_S07_ask-questions_v01.mp4` | pass | 12f | 6 | [1080p](video/cc_S07_ask-questions.mp4) |
 | [cc_S09_mcp](#ccs09mcp) | Mechanism | `cc_S09_mcp_v04.mp4` | pass | 36f | 9 | [1080p](video/cc_S09_mcp.mp4) |
+
+## cc_S00_promise
+
+**Teaching job:** Hook. **On his words:** "In this video, I'm going to break down my favourite and best techniques for building software with Claude Code…"
+
+**Why (from the plan):** The hook's promise in his own key words, and a visual change in six seconds of face (J-07, E-07), without leaving him. No topics listed: the agenda is next.
+
+Latest render `cc_S00_promise_v02.mov` · check fail (newer cc_S00_promise_v03.mov on disk, not yet checked) · max sync 3f · evidence v03, 6 readable poses. **[Watch the 1080p proxy](video/cc_S00_promise.mp4)** (GitHub plays it on the file page).
+
+![cc_S00_promise f0000.jpg](cc_S00_promise/f0000.jpg) ![cc_S00_promise f0027.jpg](cc_S00_promise/f0027.jpg) ![cc_S00_promise f0059.jpg](cc_S00_promise/f0059.jpg) ![cc_S00_promise f0122.jpg](cc_S00_promise/f0122.jpg)
+
+Fastest transition: ![strip](cc_S00_promise/strip.jpg)
 
 ## cc_S00_agenda
 
@@ -49,6 +66,18 @@ Latest render `cc_S01_three-dials_v03.mp4` · check pass · max sync 9f · evide
 
 Fastest transition: ![strip](cc_S01_three-dials/strip.jpg)
 
+## cc_S01_plan-vs-accept
+
+**Teaching job:** Comparison. **On his words:** "But obviously they each have their advantages and disadvantages. So I think it's important to use them in the …"
+
+**Why (from the plan):** Planned as nothing at G2 (cc_S06 draws the contrast at 7:55); Yuvraj asked for it (9 Oct): 34 s of face was the longest stretch without a change (E-05). It previews cc_S06 without repeating it: one session at a time, no 
+
+Latest render `cc_S01_plan-vs-accept_v03.mp4` · check pass · max sync 31f · evidence v03, 11 readable poses. **[Watch the 1080p proxy](video/cc_S01_plan-vs-accept.mp4)** (GitHub plays it on the file page).
+
+![cc_S01_plan-vs-accept f0000.jpg](cc_S01_plan-vs-accept/f0000.jpg) ![cc_S01_plan-vs-accept f0265.jpg](cc_S01_plan-vs-accept/f0265.jpg) ![cc_S01_plan-vs-accept f0580.jpg](cc_S01_plan-vs-accept/f0580.jpg) ![cc_S01_plan-vs-accept f0685.jpg](cc_S01_plan-vs-accept/f0685.jpg)
+
+Fastest transition: ![strip](cc_S01_plan-vs-accept/strip.jpg)
+
 ## cc_S01_model
 
 **Teaching job:** Cast of characters. **On his words:** "In terms of model, at the time of recording this video, Opus and Fable 5 are the most recent and capable model…"
@@ -61,6 +90,18 @@ Latest render `cc_S01_model_v01.mp4` · check pass · max sync 11f · evidence v
 
 Fastest transition: ![strip](cc_S01_model/strip.jpg)
 
+## cc_S01_model-fit
+
+**Teaching job:** Verdict. **On his words:** "So obviously depends on budget, but it also depends on what task you're completing. If you're doing something …"
+
+**Why (from the plan):** Was face (w431–w470, 10 s). His verdict on the model just shown turns twice (not needed for simple, worth it for plenty of tasks); the type's size acts it out with sound off, in his words only, and the judgement stays on
+
+Latest render `cc_S01_model-fit_v01.mov` · check fail (newer cc_S01_model-fit_v02.mov on disk, not yet checked) · max sync not measured · evidence v02, 3 readable poses. **[Watch the 1080p proxy](video/cc_S01_model-fit.mp4)** (GitHub plays it on the file page).
+
+![cc_S01_model-fit f0000.jpg](cc_S01_model-fit/f0000.jpg) ![cc_S01_model-fit f0009.jpg](cc_S01_model-fit/f0009.jpg) ![cc_S01_model-fit f0092.jpg](cc_S01_model-fit/f0092.jpg)
+
+Fastest transition: ![strip](cc_S01_model-fit/strip.jpg)
+
 ## cc_S01_effort-levels
 
 **Teaching job:** Comparison / statistic. **On his words:** "And last up is effort. So again, as it stands, there are five different effort levels. There's a low, medium, …"
@@ -72,6 +113,30 @@ Latest render `cc_S01_effort-levels_v04.mp4` · check pass · max sync 1f · evi
 ![cc_S01_effort-levels f0000.jpg](cc_S01_effort-levels/f0000.jpg) ![cc_S01_effort-levels f0115.jpg](cc_S01_effort-levels/f0115.jpg) ![cc_S01_effort-levels f0163.jpg](cc_S01_effort-levels/f0163.jpg) ![cc_S01_effort-levels f0313.jpg](cc_S01_effort-levels/f0313.jpg)
 
 Fastest transition: ![strip](cc_S01_effort-levels/strip.jpg)
+
+## cc_S01_exceptions
+
+**Teaching job:** Comparison. **On his words:** "something that doesn't really require much thinking at all, then maybe a low or medium effort tier makes sense…"
+
+**Why (from the plan):** Was face (w591–w659, 15.2 s, over the E-05 ceiling). His comparison set out the way the picker runs, Faster left, Smarter right, and his habit (high) as the answer, without leaving him. 'Obviously, there are exceptions. 
+
+Latest render `cc_S01_exceptions_v01.mov` · check fail (newer cc_S01_exceptions_v03.mov on disk, not yet checked) · max sync not measured · evidence v03, 17 readable poses. **[Watch the 1080p proxy](video/cc_S01_exceptions.mp4)** (GitHub plays it on the file page).
+
+![cc_S01_exceptions f0000.jpg](cc_S01_exceptions/f0000.jpg) ![cc_S01_exceptions f0077.jpg](cc_S01_exceptions/f0077.jpg) ![cc_S01_exceptions f0266.jpg](cc_S01_exceptions/f0266.jpg) ![cc_S01_exceptions f0339.jpg](cc_S01_exceptions/f0339.jpg)
+
+Fastest transition: ![strip](cc_S01_exceptions/strip.jpg)
+
+## cc_S02_branch-fork
+
+**Teaching job:** Mechanism. **On his words:** "Branch allows you to sort of branch off from your original conversation and start a new conversation, maybe in…"
+
+**Why (from the plan):** Branching is a mechanism; seeing the copy made at one point and the original untouched teaches it in one picture, in the tool's own UI.
+
+Latest render `cc_S02_branch-fork_v01.mp4` · check pass · max sync not measured · evidence v01, 13 readable poses. **[Watch the 1080p proxy](video/cc_S02_branch-fork.mp4)** (GitHub plays it on the file page).
+
+![cc_S02_branch-fork f0000.jpg](cc_S02_branch-fork/f0000.jpg) ![cc_S02_branch-fork f0141.jpg](cc_S02_branch-fork/f0141.jpg) ![cc_S02_branch-fork f0292.jpg](cc_S02_branch-fork/f0292.jpg) ![cc_S02_branch-fork f0463.jpg](cc_S02_branch-fork/f0463.jpg)
+
+Fastest transition: ![strip](cc_S02_branch-fork/strip.jpg)
 
 ## cc_S03_window
 

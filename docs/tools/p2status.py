@@ -85,7 +85,8 @@ for r in sorted(rc):
 L.append("")
 import os
 rd=os.path.join(os.path.dirname(events_path),"renders")
-ondisk=len([f for f in os.listdir(rd) if f.endswith(".mp4") and not f.startswith("._")]) if os.path.isdir(rd) else 0
-L.append(f"Note: {ondisk} render files are in the P2 `renders/` folder at snapshot time (the latest version of each built moment; older versions were removed). The record of every check and evidence run (render SHA-256, result, flashes, sync note, seconds) is in `events.jsonl`.")
+ondisk=len([f for f in os.listdir(rd) if f.endswith((".mp4",".mov")) and not f.startswith("._")]) if os.path.isdir(rd) else 0
+movs=len([f for f in os.listdir(rd) if f.endswith(".mov") and not f.startswith("._")]) if os.path.isdir(rd) else 0
+L.append(f"Note: {ondisk} render files are in the P2 `renders/` folder at snapshot time ({movs} of them ProRes 4444 alpha overlays, `.mov`, for the moments drawn over Joel's face: promise, exceptions, model-fit). The record of every check and evidence run (render SHA-256, result, flashes, sync note, seconds) is in `events.jsonl`.")
 open(out,"w").write("\n".join(L)+"\n")
 print("rows",len(rows),"built",built,"rc",len(rc),"flash",len(flash_renders),"approved",len(approved),"treat",dict(treat))

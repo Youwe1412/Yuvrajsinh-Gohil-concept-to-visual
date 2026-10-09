@@ -43,9 +43,10 @@ def anchor(n):
 
 rows, total = [], 0
 for m in ms:
-    if m.get("treatment") != "animation":
-        continue
     n = m["name"]
+    is_overlay = latest.get(n, "").endswith(".mov")
+    if m.get("treatment") != "animation" and not is_overlay:
+        continue
     d = os.path.join(P2, "reviews", n)
     if not os.path.isdir(d):
         continue
@@ -70,6 +71,11 @@ for m in ms:
     if has_strip:
         total += shrink(strip, os.path.join(od, "strip.jpg"), 1280, 5)
     r = latest.get(n)
+    # prefer the newest render on disk when it is newer than the last checked one
+    rd = os.path.join(P2, "renders")
+    disk = sorted(f for f in os.listdir(rd) if f.startswith(n + "_v") and f.endswith((".mp4", ".mov")) and not f.startswith("._")) if os.path.isdir(rd) else []
+    disk_latest = ("renders/" + disk[-1]) if disk else None
+    unchecked = bool(disk_latest and r and disk_latest > r)
     note = ev.get(r, {}).get("note", "") if r else ""
     mm = re.search(r"sync max offset (\d+)f", note)
     sync = f"{mm.group(1)}f" if mm else "not measured"
@@ -77,7 +83,8 @@ for m in ms:
     if len(words) > 110:
         words = words[:110] + "…"
     rows.append(dict(n=n, job=m.get("job") or "-", words=words, r=r.split("/")[-1] if r else "-",
-                     res=rc[r]["result"] if r else "-", sync=sync, np=len(poses), v=v, outs=outs,
+                     res=(rc[r]["result"] if r else "-") + (f" (newer {disk_latest.split('/')[-1]} on disk, not yet checked)" if unchecked else ""),
+                     sync=sync, np=len(poses), v=v, outs=outs, overlay=is_overlay,
                      strip=has_strip, why=(m.get("why") or "")[:220]))
 
 L = [
@@ -86,11 +93,11 @@ L = [
     f"Status as of {asof}. Each moment below is an animation this pipeline built for Joel Belton's Claude Code video (P2). "
     "The frames are **readable poses** that `aem evidence` extracted from the latest checked render (a pose is where the picture "
     "settles for a quarter second), downscaled to 960 px, plus the **strip** of frames around the fastest transition. "
-    "Nothing here is Joel's footage or his terminal; those moments are left out on purpose. The renders themselves "
+    "Nothing here is Joel's footage or his terminal; those moments are left out on purpose. Three moments (promise, exceptions, model-fit) are alpha overlays drawn over his face, rendered as ProRes 4444 `.mov`; their proxies are flattened on black. The renders themselves "
     "(3840x2160, 25 fps) stay in the project folder; where a 1080p proxy is linked, GitHub plays it on the file page. Max sync is the largest offset, in frames, between a cue word's onset "
     "and the pose settling on it.",
     "",
-    f"{len(rows)} animation moments. Measured state: [P2-STATUS.md](../P2-STATUS.md); method: [CASE-STUDY.md](../CASE-STUDY.md). "
+    f"{len(rows)} moments ({sum(1 for x in rows if x['overlay'])} alpha overlays). Measured state: [P2-STATUS.md](../P2-STATUS.md); method: [CASE-STUDY.md](../CASE-STUDY.md). "
     f"Built by `docs/tools/showcase.py`.",
     "",
     "| Moment | Teaching job | Latest render | Check | Max sync | Poses | Video |",
