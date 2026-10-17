@@ -112,16 +112,52 @@
           "render": "G4"
         }
       },
-      "audio_libraries": [
-        {
-          "name": "Epidemic Sound",
-          "path": "~/Documents/Epidemic Sound"
+      "audio": {
+        "summary": "Joel's sound policy, read by the mergetomaster-studio skill and checked with earshot. aem does not read it. Each value names the rule it comes from.",
+        "libraries": [
+          {
+            "name": "Epidemic Sound",
+            "path": "~/Documents/Epidemic Sound"
+          },
+          {
+            "name": "Envato Elements",
+            "path": null
+          }
+        ],
+        "libraries_first": true,
+        "cue_kinds": [
+          "mouse clicks",
+          "keyboards",
+          "anything else appropriate"
+        ],
+        "music": {
+          "library": "Epidemic Sound",
+          "vocals_under_speech": false,
+          "beds_per_segment": 1
         },
-        {
-          "name": "Envato Elements",
-          "path": null
+        "loudness": {
+          "master_lufs_integrated": -14,
+          "true_peak_dbtp": -1,
+          "dialogue_lufs_short_term": [
+            -16,
+            -14
+          ],
+          "music_under_dialogue_db": [
+            18,
+            22
+          ]
+        },
+        "generated_sfx": "pending",
+        "llm_upload": false,
+        "sources": {
+          "libraries": "M-25, E-09",
+          "cue_kinds": "J-05",
+          "music": "J-03, E-09",
+          "loudness": "E-08",
+          "generated_sfx": "open question in joel-decisions.md; J-01, B-26 apply if allowed",
+          "llm_upload": "client material stays on this machine"
         }
-      ],
+      },
       "moments": {
         "plan_files": [
           "visual-plan.md"

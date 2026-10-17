@@ -158,9 +158,10 @@ field:
 | `moments` | plan files `visual-plan.md`, shot list `shotlist.md`, placements `data/edit.json`, `renders/*/PLACEMENTS.csv` | moments |
 | `stage_groups` | design G1–G3, build G4, review G5 and G7, placement G6 | the time report |
 | `evidence` | the rule IDs evidence speaks to (sync M-03, phone B-T1-03, flash B-T1-01 M-T1-01 M-26, motion M-T1-03, contract M-18, critic M-19); 6 renders per command at most | evidence |
+| `audio` | sound policy from Joel's rules: libraries Epidemic Sound and Envato Elements first (M-25, E-09), cue kinds (J-05), music (J-03, E-09), loudness −14 LUFS integrated, −1 dBTP, dialogue −16 to −14 LUFS short-term, music 18–22 dB under (E-08), `generated_sfx: pending` until Joel answers his open question, `llm_upload: false` | the client skill's Listening step with earshot; not read by `aem` |
 
-Joel's entry still carries `protected_files`, `blocked_commands`, `shared_paths` and `audio_libraries`
-from the guard; nothing reads them since 1.0.0 (left in place so the registry did not change; delete
+Joel's entry still carries `protected_files`, `blocked_commands` and `shared_paths`
+from the guard (`audio_libraries` moved into `audio.libraries`); nothing reads them since 1.0.0 (left in place so the registry did not change; delete
 them when convenient). `client-template/` is what `aem new-client` copies into an empty design-system
 folder: decisions file (with an "Open questions" section for `recall`), rules file,
 `critic/labelled-cases.jsonl` with its header, `text/`, a README and a registry entry template.

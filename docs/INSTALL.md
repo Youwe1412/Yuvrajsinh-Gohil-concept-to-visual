@@ -44,8 +44,9 @@ Run from anywhere that is not a registered project's folder, `aem status` should
 
 `registry/clients.json` holds every client: its design-system folder, projects folder, gates,
 approval and delivery patterns, render scripts, review settings and idle time. Read Joel's entry as
-the worked example. (Since 1.0.0 nothing reads `protected_files`, `blocked_commands`, `shared_paths`
-or `audio_libraries`; they belonged to the guard and can be deleted.) To add a client from the
+the worked example. (Since 1.0.0 nothing reads `protected_files`, `blocked_commands` or `shared_paths`;
+they belonged to the guard and can be deleted. `audio` is the client's sound policy, read by the client
+skill and earshot, not by `aem`.) To add a client from the
 template (`registry/client-template/`):
 
 ```bash
