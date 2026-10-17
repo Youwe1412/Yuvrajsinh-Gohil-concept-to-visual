@@ -63,12 +63,14 @@ says it did.
 | `accept-video <version> --source TEXT` | The client accepted the delivered video: an implicit acceptance (`ruling: accepted`, `level: implicit`, the render's SHA-256 at that version) for every moment with no explicit keep, change or remove. Once per version. Operator only. |
 | `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove\|note [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval; `state` says `approved`, `stale`, `rejected`, `none` or `missing`. |
-| `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
+| `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, loudness and true peak when the render carries sound, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
 | `import-review <csv> [--fps N/D] [--start-tc TC]` | Maps a Frame.io comment export to frames, moments and word IDs: a comment on a moment is a candidate for the client's explicit ruling; one on no moment is a remark about the video. Writes review files and draft labelled cases for the inbox; never edits the decisions file or the critic's file. |
 | `import-review <csv> --notes [--fps N/D] [--start-tc TC]` | The client's timestamped notes on a rough cut: direction, not rulings. Kept as `reviews/<client>/<date>-notes.csv` and `.json`; the moments they cover become "asked". |
 | `moments [--no-write]` | Builds `moments/index.json` (see [Moments](#moments-aem-moments)) and prints the table. |
 | `evidence <render> [--moment ID] [--cue WORD_ID]… [--cue-at SECONDS]…` | Images, sync and facts a critic can read, for one render (see [Evidence](#evidence-aem-evidence)). The sentinel runs it after every render. Open. |
 | `evidence <cut> --video [--offset SECONDS]` | One contact sheet per moment from the assembled cut, and `video.md`. |
+| `chose "<what>" --why "<reason>" [--moment ID] [--rule ID]… [--alt TEXT]…` | Records a decision of ours where the brief, the plan and the client's rulings left a gap: a `choice` event in `events.jsonl`. `moments` attaches choices to their moment; `calibrate` counts the client's changes that rest on one. Open. |
+| `rounds [--moment ID] [--no-write]` | Each moment's versions side by side from `reviews/`: render check, flashes, sync, frozen holds, the critic's verdict, which findings each version fixed, kept or brought back, and the sound-off read. Writes `reports/rounds.md`. Open. |
 | `calibrate [client]` | What the client's rulings say: acceptance per video, critic agreement, rules (see [Calibration](#rulings-and-calibration)). Read-only. |
 | `observe` | Records one tool call, read as JSON on stdin (`{tool, input, cwd, session, agent}`), and says whether it delivers media with no current approval. Never refuses. The plugin runs it before every `Bash`, `Read`, `Write`, `Edit`, `MultiEdit` and `NotebookEdit` call; see [Observation](#observation). |
 | `rendered` | Checks the renders a finished shell command wrote, read as JSON on stdin (`{command, cwd, started_at, exit_code, probe_only}`). Runs `check-render` on each and returns a toast line and a note for the agent. The plugin runs it after every `Bash` call; see Render sentinel below. |
@@ -113,11 +115,15 @@ good place to say where the rate came from).
   "render_sentinel": {"command_patterns": ["\\bbin/render\\.sh\\b"], "output_dirs": ["renders"]},
   "stage_inference": {"scene_dirs": ["src", "compositions"]},
   "moments": {"plan_files": ["visual-plan.md"], "shotlist_files": ["shotlist.md"]},
-  "evidence": {"max_per_command": 6}
+  "evidence": {"max_per_command": 6, "max_still_s": 0.5, "max_frozen_per_30s": 1.0,
+               "references": ["references/*.png", "references/*.jpg"]},
+  "loudness": {"target_lufs": -14, "tolerance_lu": 1.0, "max_true_peak_db": -1.0}
 }
 ```
 
-`moments` and `evidence` override the client's registry settings of the same name (below).
+`moments`, `evidence` and `loudness` override the client's registry settings of the same name (below).
+With no `loudness.target_lufs` anywhere, integrated loudness is measured and shown but not checked; the
+true-peak ceiling (default −1 dBTP) is checked whenever the render has an audio stream.
 
 Per scene you can also give `frames`, `duration_s`, `width`, `height`, `alpha`. Without a duration,
 `check-render` reads the HyperFrames composition's `data-duration` (found by `scenes.<item>.composition`,
@@ -258,6 +264,11 @@ flags, so a script *file* is not known to only read.
 
 ## Render check limits
 
+- Loudness is EBU R128 through ffmpeg's `ebur128` filter (`peak=true`) on the first audio stream:
+  integrated loudness in LUFS, loudness range in LU, true peak in dBTP. A render with no audio stream says
+  "not checked: no audio stream", which is right for inserts that ship silent with their cues as
+  separate clips. Loudness of a short clip is measured over the clip, not the finished programme.
+
 - Dimensions, fps, frame count and alpha are checked only when the spec gives them; otherwise the
   check says "not checked" and why. Duration is checked against frames ÷ the stream's own rate.
 - The flash scan decodes every frame, averages it down to a 96 × 54 grid of luma (and alpha when
@@ -363,7 +374,9 @@ What a render looks like, written for Claude to read. For one render, in `review
 | `strip.jpg` | eight frames around the fastest transition, side by side (480 px each) |
 | `sync.json` | per cue word: its onset frame, the frame the picture starts to change, the frame it settles, and the offset in frames (settle − onset) |
 | `facts.json` | the render check: spec, frame count, flashes (frame, area, severity), SHA-256 |
-| `evidence.md` | all of it with relative paths, the moment's contract, the rule IDs it speaks to (the client's `evidence.rules`) and how to report; a critic subagent given this file alone has everything, and is told not to read the scene source |
+| `holds.json` | every run of frozen frames (each repeats the one before it, under 0.03 grey levels per pixel at 160 × 90), its first and last frame, length and where it sits (start, middle, end); frozen seconds per 30 s; the runs longer than `evidence.max_still_s` (0.5 s) and whether frozen time is over `evidence.max_frozen_per_30s` (1 s) |
+| `sheet.jpg`, `retell.md` | the render at 2 frames a second (at most 24, evenly spaced), tiled, 320 px each, no sound; and the only file a sound-off reader is given: open the sheet, nothing else, and write `retell.json` (`retell`, `unclear`) |
+| `evidence.md` | all of it with relative paths, the moment's contract, the rule IDs it speaks to (the client's `evidence.rules`), holds, the sound-off read, reference frames for the director's review (the project's files matching `evidence.references`, at most 6) and how to report; a critic subagent given this file alone has everything, and is told not to read the scene source |
 
 Cue words come from `--cue-at` (seconds into the scene, for hand-measured onsets), `--cue` (word IDs),
 the plan's cue column, or, when none is written, are inferred from motion (each movement paired with the
@@ -378,8 +391,18 @@ each moment's word span, and `video.md`.
 **Cost, measured** on the 59 P1 v08 masters (423.6 s of 3840 × 2160 at 24000/1001): 120 s in all;
 1.37 s per render (median, 9.9 s the most); 2.4 s per 10 s of scene for MP4 (median; 5.1 s the most, a
 1.3 s title where start-up dominates); 11.9–15.4 s per 10 s for the four ProRes 4444 alpha MOVs, whose
-decode is slower. The P1 film (11:24 at 1080p) gave 58 contact sheets in 8.2 s. It runs after the
+decode is slower. The P1 film (11:24 at 1080p) gave 58 contact sheets in 8.2 s. Those figures predate `sheet.jpg`
+(17 October 2026), which adds one more decode: about a quarter more (3.4 → 4.3 s on the 4K test scene). It runs after the
 render has finished and is advisory: it blocks nothing and is never a gate.
+
+`critic.json` keeps `verdict` and `findings` as before and adds `retell_match` (`yes`, `partly`, `no`,
+`no target`) and `director` (the reference comparisons, or null). Neither changes the verdict.
+
+Holds, the sound-off read and the director's review are advice: nothing fails because of them and the
+toast does not mention them. The frozen threshold is uncalibrated: it was set on synthetic clips, not on
+P1's renders; a very slow drift of a small element can read as frozen, and encoder noise can make a
+true hold read as moving. Text contrast is not measured (AEM has no text geometry); the critic judges it
+on the phone crops.
 
 Limits: the poses are found by stillness, so a scene that never holds still for a quarter second has
 only its first and last frame; inferred cue words are guesses and are labelled so; sync is measured

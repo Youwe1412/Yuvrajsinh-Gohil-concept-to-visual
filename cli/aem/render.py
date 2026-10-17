@@ -1,5 +1,8 @@
 """check-render: probe a render against the project spec and scan it for one- and two-frame flashes.
 
+When the render carries sound, its loudness is measured too (EBU R128 through ffmpeg's ebur128 filter):
+integrated loudness against the client's or project's target when one is set, true peak against a ceiling.
+
 The flash scan decodes every frame with ffmpeg, scaled by area averaging to a coarse grid of
 luma (and alpha, when the file has it), and looks for regions that change and then return
 to what they were one or two frames later, with no nearby region taking the new content
@@ -23,6 +26,8 @@ CHANGE = 20      # block mean difference (0-255) that counts as content appearin
 RETURN = 6       # block mean difference under which a block is back to before
 NEAR = 12        # cells: new content this close at the next frame means motion, not a flash
 MIN_AREA_PCT = 0.1  # findings smaller than this share of the frame are reported as minor, not failures
+TRUE_PEAK_MAX_DB = -1.0  # dBTP; a mix above this can clip after encoding
+LOUDNESS_TOLERANCE_LU = 1.0
 ALPHA_FMTS = ("yuva", "rgba", "argb", "bgra", "abgr", "gbrap", "ya8", "ya16", "rgba64", "bgra64")
 
 
@@ -58,6 +63,39 @@ def probe(path: Path) -> dict:
         "duration_s": float(dur) if dur not in (None, "N/A") else None,
         "container": fmt.get("format_name"),
     }
+
+
+def audio_stream(path: Path) -> str | None:
+    """The codec of the first audio stream, or None when the file is silent (has no audio stream)."""
+    out = subprocess.run([_need("ffprobe"), "-v", "error", "-select_streams", "a:0", "-show_entries",
+                          "stream=codec_name", "-of", "json", str(path)], capture_output=True, text=True)
+    streams = (json.loads(out.stdout or "{}").get("streams") or []) if out.returncode == 0 else []
+    return streams[0].get("codec_name") or "audio" if streams else None
+
+
+def loudness(path: Path) -> dict:
+    """Integrated loudness (LUFS), loudness range (LU) and true peak (dBTP) of the first audio stream."""
+    import re
+    p = subprocess.run([_need("ffmpeg"), "-v", "info", "-nostdin", "-i", str(path), "-map", "0:a:0",
+                        "-af", "ebur128=peak=true", "-f", "null", "-"], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise CheckFailed(f"ffmpeg could not measure loudness of {path.name}: {p.stderr.strip()[-300:]}")
+    summary = p.stderr[p.stderr.rfind("Summary:"):] if "Summary:" in p.stderr else p.stderr
+
+    def num(pattern):
+        m = re.search(pattern, summary)
+        if not m:
+            return None
+        return float("-inf") if m.group(1) == "-inf" else float(m.group(1))
+    return {"integrated_lufs": num(r"I:\s+(-?[0-9.]+|-inf) LUFS"), "range_lu": num(r"LRA:\s+(-?[0-9.]+) LU"),
+            "true_peak_dbtp": num(r"True peak:\s+Peak:\s+(-?[0-9.]+|-inf) dBFS")}
+
+
+def loudness_settings(ctx: Context) -> dict:
+    cfg = {"target_lufs": None, "tolerance_lu": LOUDNESS_TOLERANCE_LU, "max_true_peak_db": TRUE_PEAK_MAX_DB}
+    cfg.update(ctx.client.raw.get("loudness") or {})
+    cfg.update(ctx.project_settings().get("loudness") or {})
+    return cfg
 
 
 def _frames(path: Path, plane: str):
@@ -277,6 +315,26 @@ def check_render(ctx: Context, path: str, *, item: str | None = None, record: bo
     else:
         add("alpha", None, None, info["alpha"], f"not checked: {info['pix_fmt']}")
 
+    sound = audio_stream(p)
+    loud = None
+    if sound:
+        lcfg = loudness_settings(ctx)
+        loud = loudness(p)
+        target, tol = lcfg.get("target_lufs"), float(lcfg.get("tolerance_lu") or LOUDNESS_TOLERANCE_LU)
+        il, tp = loud["integrated_lufs"], loud["true_peak_dbtp"]
+        if target is None:
+            add("loudness", None, None, il, "measured, not checked: no loudness.target_lufs for this client or project")
+        else:
+            add("loudness", il is not None and abs(il - float(target)) <= tol, f"{float(target):g} ± {tol:g} LUFS", il,
+                "integrated, EBU R128")
+        ceiling = lcfg.get("max_true_peak_db")
+        if ceiling is None:
+            add("true peak", None, None, tp, "measured, not checked: no loudness.max_true_peak_db")
+        else:
+            add("true peak", tp is not None and tp <= float(ceiling), f"<= {float(ceiling):g} dBTP", tp)
+    else:
+        add("loudness", None, None, None, "not checked: no audio stream")
+
     scan = scan_flashes(p, alpha=info["alpha"])
     if info["frames"] is not None and scan["frames_scanned"] != info["frames"]:
         add("decoded frames", False, info["frames"], scan["frames_scanned"], "ffmpeg decoded a different count than ffprobe")
@@ -301,7 +359,7 @@ def check_render(ctx: Context, path: str, *, item: str | None = None, record: bo
         "ok": not failed, "result": "pass" if not failed else "fail", "scene": it, "path": rel,
         "render_sha256": sha, "probe": info, "expected": {k: (fpsmod.rate_str(v) if isinstance(v, Fraction) else v)
                                                            for k, v in exp.items()},
-        "checks": checks, "flashes": scan["findings"], "flash_scan": {k: scan[k] for k in ("frames_scanned", "planes", "method")},
+        "checks": checks, "loudness": loud, "flashes": scan["findings"], "flash_scan": {k: scan[k] for k in ("frames_scanned", "planes", "method")},
         "failures": [f"{c['check']}: expected {c['expected']}, got {c['actual']}" for c in failed],
     }
     if record:

@@ -319,7 +319,7 @@ class NewClient(WorldCase):
         code, d = self.w.run("new-client", "beta", "--name", "Beta Academy", "--design-system", str(ds),
                              "--projects-root", str(self.w.tmp / "Beta"), "--contact", "Bo", "--registry", str(self.w.registry))
         self.assertEqual(code, 0, d)
-        for f in ("README.md", "rules.md", "beta-decisions.md", "text/README.md", "critic/labelled-cases.jsonl"):
+        for f in ("README.md", "rules.md", "craft-baseline.md", "beta-decisions.md", "text/README.md", "critic/labelled-cases.jsonl"):
             self.assertTrue((ds / f).exists(), f)
         self.assertNotIn("{{", (ds / "beta-decisions.md").read_text())
         hdr = json.loads((ds / "critic" / "labelled-cases.jsonl").read_text().splitlines()[0])
@@ -368,6 +368,7 @@ class JsonEverywhere(WorldCase):
             ("status",), ("stage", "start", "G1"), ("report", "--no-write"),
             ("approve", "a", "renders/a.mp4", "--gate", "G4"), ("reject", "a", "--reason", "r"),
             ("recall",), ("integrity",), ("check-approval", "renders/a.mp4"), ("drift", "--skills-dir", str(self.w.skills)),
+            ("chose", "x", "--why", "y"), ("rounds", "--no-write"),
         ]
         for c in cmds:
             code, d = self.w.run(*c)

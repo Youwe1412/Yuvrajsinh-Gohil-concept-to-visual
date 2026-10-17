@@ -397,6 +397,16 @@ def critic_findings(ctx: Context, moment_id: str) -> list[dict]:
     return out
 
 
+def choice_events(ctx: Context) -> list[dict]:
+    """`aem chose` events: the decisions we made where the brief and the client's rulings left a gap."""
+    return [e for e in read_jsonl(ctx.events_path) if e.get("event") == "choice"] if ctx.events_path.exists() else []
+
+
+def choices_of(chosen: list[dict], m: dict) -> list[dict]:
+    return [{"ts": e.get("ts"), "choice": e.get("note"), "why": e.get("why"), "rule_ids": e.get("rule_ids") or []}
+            for e in chosen if e.get("scene") and (e["scene"] == m.get("id") or _matches(str(e["scene"]), m))]
+
+
 def stage_time(ctx: Context, moments: list[dict]) -> tuple[dict, dict]:
     """Stage wall time per moment (stages whose scene names it) and what no moment claims."""
     events = ledger.read_events(ctx)
@@ -512,6 +522,7 @@ def build(ctx: Context) -> dict:
         elif case_level(c, ctx.client.operator_id) in ("explicit", "implicit"):
             unlinked.append(f"labelled case {c.get('case_id')} names {c.get('moment') or c.get('shot')}, which is no moment")
     times, loose_time = stage_time(ctx, moments)
+    chosen = choice_events(ctx)
     for m in moments:
         mine = [f for item, fs in by_item.items() if _matches(item, m) for f in fs]
         claimed.update(mine)
@@ -525,6 +536,7 @@ def build(ctx: Context) -> dict:
                              "standing": st["standing"], "why": st["why"]}
         m["ruling"] = ruling_of(case_moment.get(m["id"], []), ctx.client.operator_id)
         m["critic"] = critic_findings(ctx, m["id"])
+        m["choices"] = choices_of(chosen, m)
         m["time"] = times.get(m["id"])
         if not m["renders"] and m.get("treatment") in ("animation", None) and m.get("asset"):
             unlinked.append(f"moment {m['id']}: no render file for its asset {m['asset']}")

@@ -191,6 +191,18 @@ class Learn(unittest.TestCase):
         self.assertIn("untested: no critic findings (critic.json) recorded for any ruled version", text)
         self.assertFalse(d["evidence"])
 
+    def test_calibrate_tells_changes_that_rest_on_our_choices(self):
+        self.w.import_notes()
+        self.w.run("accept-video", "v08", "--source", "Frame.io, 14 Sep 2026", check=True)
+        self.w.run("chose", "a 50 ms full-frame cut", "--why", "the speed is the point", "--moment", "fd_S04_50ms",
+                   operator=False, check=True)
+        self.w.run("chose", "the park map in his colours", "--why", "one colour per route",
+                   "--moment", "fd_S05_board-a", operator=False, check=True)
+        d = self.calibrate()
+        v = d["videos"][0]
+        self.assertEqual((v["changed_on_our_choice"], v["moments_with_choices"]), (1, 2))
+        self.assertIn("1 of 3 changed moment(s) rest on a choice of ours (aem chose); 2 of 58 moments carry one", d["text"])
+
     def test_calibrate_with_no_rulings_says_so_and_stops(self):
         cases = self.w.ds / "critic" / "labelled-cases.jsonl"
         cases.write_text(cases.read_text().splitlines()[0] + "\n")  # the header line alone

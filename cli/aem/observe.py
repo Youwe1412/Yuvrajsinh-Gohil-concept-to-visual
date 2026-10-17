@@ -294,7 +294,7 @@ unzip zipinfo zcat ffprobe mediainfo exiftool realpath readlink basename dirname
 date echo printf pwd cd pushd popd true false test [ [[ : set export unset read wait sleep find
 """.split())
 READ_ONLY_AEM = frozenset(["status", "context", "recall", "check-approval", "check-render", "report", "drift",
-                           "import-review", "integrity", "codex-config"])
+                           "import-review", "integrity", "codex-config", "rounds", "chose"])
 INLINE_CODE_PROGRAMS = frozenset(["python", "python3", "node", "ruby", "perl"])
 CODE_WRITES = re.compile(
     r"open\([^)]*,\s*['\"][^'\"]*[wax+]|\.write\(|write_text|write_bytes|\bshutil\b|\bsubprocess\b|os\.(?:system|popen|remove|"
