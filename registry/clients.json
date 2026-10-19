@@ -147,14 +147,14 @@
             22
           ]
         },
-        "generated_sfx": "pending",
+        "generated_sfx": "allowed",
         "llm_upload": false,
         "sources": {
           "libraries": "M-25, E-09",
           "cue_kinds": "J-05",
           "music": "J-03, E-09",
           "loudness": "E-08",
-          "generated_sfx": "open question in joel-decisions.md; J-01, B-26 apply if allowed",
+          "generated_sfx": "Yuvraj's decision, 2026-10-19: earshot and Claude Code made SFX may be used; Joel's open question in joel-decisions.md is still unanswered; J-01, B-26 apply",
           "llm_upload": "client material stays on this machine"
         }
       },
