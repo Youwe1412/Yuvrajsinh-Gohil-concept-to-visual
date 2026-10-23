@@ -1,6 +1,12 @@
 # P2 status · Claude Code video · MergeToMaster
 
-Status as of 9 Oct 2026, 23:30 IST. Generated from `aem moments` (`moments/index.json`), `aem report` (`reports/time.md`) and `events.jsonl` in the P2 project folder by `docs/tools/p2status.py`. Joel's Frame.io review is pending; this page is updated after it.
+Status as of 9 Oct 2026, 23:30 IST. Generated from `aem moments` (`moments/index.json`), `aem report` (`reports/time.md`) and `events.jsonl` in the P2 project folder by `docs/tools/p2status.py`. The tables below are that 9 Oct snapshot, unchanged.
+
+## Delivery and review (23 Oct 2026, reconstructed)
+
+- **Delivered:** `P2 - Claude Code Done.mov`, exported 15 Oct 2026, 02:00 IST; on Frame.io at [f.io/dBF09OXt](https://f.io/dBF09OXt). SHA-256 `7029f2311417bf611be9c6e88e6f768b104be7dd195b654e49f515ba761058da`, 3840×2160, 25 fps, 666.36 s.
+- **Joel's review:** accepted with no changes on WhatsApp, 19 Oct 2026: "Hi, no I think its all ready to go :) happy for you to send me the invoice". 0 Frame.io comments on the share page, 23 Oct. Screenshots, transcript and hashes: [p2-review](p2-review/README.md).
+- **Not in AEM yet:** Joel's words wait for the operator's `client-said`; the master went out with 0 standing approvals and no delivery event in `events.jsonl` (measured).
 
 ## Counts (measured by AEM unless marked)
 
@@ -12,7 +18,7 @@ Status as of 9 Oct 2026, 23:30 IST. Generated from `aem moments` (`moments/index
 - Render versions where `check-render` flagged one- or two-frame luma flashes (area 0.02–0.04 % of frame): **14**; the evidence notes record no flash for any render.
 - Standing approvals: **0**; stale: **1** (cc_S00_agenda_v02.mp4 superseded by cc_S00_agenda_v03.mp4).
 - Failed checks: `cc_S08_skills-list_v03.mp4` (fail: short flashes (1-2 frames): expected 0, got 3); `cc_S00_promise_v01.mov` (fail: alpha: expected False, got True); `cc_S00_promise_v02.mov` (fail: alpha: expected False, got True); `cc_S01_model-fit_v01.mov` (fail: alpha: expected False, got True); `cc_S01_exceptions_v01.mov` (fail: alpha: expected False, got True).
-- Rulings from Joel on P2: **0** (review pending).
+- Rulings from Joel on P2: **0** at 9 Oct (review pending then). On 19 Oct he accepted the video with no changes; see Delivery and review above.
 
 ## Time per gate (measured by AEM, `aem report`)
 
