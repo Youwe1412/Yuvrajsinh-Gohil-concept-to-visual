@@ -9,6 +9,7 @@ a second of the moment's words), and against what P1's own FRAMEIO-COMMENTS-MAP.
 """
 import hashlib
 import json
+import os
 import unittest
 
 from helpers import P1_FIXTURE, P1World
@@ -163,6 +164,49 @@ class Learn(unittest.TestCase):
         code, d = self.w.run("accept-video", "v08", "--source", "Frame.io", operator=False)
         self.assertEqual(code, 2)
         self.assertTrue(d["operator_only"])
+
+    def test_accept_video_latest_takes_each_moments_newest_render(self):
+        """P2's moments went out at different versions (v01 to v06), so one version string cannot name them:
+        latest accepts each moment's newest render, and --before (the delivered master) leaves out anything
+        rendered after it."""
+        self.w.import_notes()
+        later = self.w.project / "renders" / "v09" / "fd_S01_100-runs_v09.mp4"
+        later.parent.mkdir(parents=True, exist_ok=True)
+        later.write_bytes(b"stand-in fd_S01_100-runs_v09.mp4")
+        master = self.w.project / "Done" / "P1 Done.mov"
+        master.parent.mkdir(parents=True, exist_ok=True)
+        master.write_bytes(b"the delivered master")
+        t = master.stat().st_mtime
+        os.utime(later, (t + 3600, t + 3600))  # re-rendered an hour after the master went out
+        before = len(self.cases())
+        code, d = self.w.run("accept-video", "latest", "--before", "Done/P1 Done.mov",
+                             "--source", "WhatsApp, 19 Oct 2026", check=True)
+        self.assertEqual((d["implicit_written"], sorted(d["explicit"]), d["no_render_at_version"]), (55, CHANGED, []))
+        self.assertEqual(d["versions"]["fd_S01_100-runs"], "v08")  # v09 came after the master: not what he saw
+        new = self.cases()[before:]
+        self.assertEqual(len(new), 55)
+        for c in new:
+            self.assertEqual((c["level"], c["ruling"], c["status"], c["version"]),
+                             ("implicit", "accepted", "development case", "v08"))
+            self.assertEqual(c["render_sha256"],
+                             sha(next((self.w.project / "renders" / "v08").glob(c["moment"] + "_v08.*"))))
+        self.assertTrue(self.w.events()[-1]["note"].startswith("latest before Done/P1 Done.mov: "))
+        # Without --before the newest render counts: only the moment re-rendered at v09 gets a new acceptance.
+        code, d = self.w.run("accept-video", "latest", "--source", "WhatsApp, 20 Oct 2026", check=True)
+        self.assertEqual((d["implicit_written"], len(d["already_accepted"])), (1, 54))
+        self.assertEqual(d["versions"]["fd_S01_100-runs"], "v09")
+        last = self.cases()[-1]
+        self.assertEqual((last["moment"], last["version"], last["render_sha256"]), ("fd_S01_100-runs", "v09", sha(later)))
+
+    def test_accept_video_before_needs_latest_and_a_real_time(self):
+        before = len(self.cases())
+        code, d = self.w.run("accept-video", "v08", "--before", "2026-10-15T02:00", "--source", "Frame.io")
+        self.assertNotEqual(code, 0)
+        self.assertIn("--before goes with latest only", json.dumps(d))
+        code, d = self.w.run("accept-video", "latest", "--before", "not a file or a time", "--source", "Frame.io")
+        self.assertNotEqual(code, 0)
+        self.assertIn("neither a file nor an ISO date-time", json.dumps(d))
+        self.assertEqual(len(self.cases()), before)  # nothing written
 
     # --- calibrate -------------------------------------------------------------------------------------
 

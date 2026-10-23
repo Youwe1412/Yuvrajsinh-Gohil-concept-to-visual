@@ -170,6 +170,12 @@ def _assign(header: list[str]) -> dict:
     return out
 
 
+# A table lists moments only when its header names at least one of these (after the first column). A plan file's other
+# tables are not moments: P2's visual-plan.md also holds a totals table, the shots to ask Joel for and a pacing audit,
+# whose 21 rows were read as moments until 23 Oct 2026.
+MOMENT_FIELDS = frozenset({"words", "cues", "job", "treatment", *CONTRACT})
+
+
 def plan_rows(ctx: Context, cfg: dict, words: list[dict]) -> tuple[list[dict], list[str]]:
     rows: dict[str, dict] = {}
     files = []
@@ -179,6 +185,10 @@ def plan_rows(ctx: Context, cfg: dict, words: list[dict]) -> tuple[list[dict], l
             cells = r["cells"]
             header = list(cells)
             fields = _assign(header)
+            if not MOMENT_FIELDS & set(fields.values()):
+                continue
+            if r["row"].startswith("~~"):
+                continue  # struck through: a retired moment (P2's ~~`cc_S00_waste`~~)
             m = rows.setdefault(r["row"], {"name": r["row"], "plan": []})
             m["plan"].append(f"{rel_to(path, ctx.project_dir)}:{r['line']}")
             for col, field in fields.items():

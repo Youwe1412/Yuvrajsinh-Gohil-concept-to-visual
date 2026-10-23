@@ -12,7 +12,7 @@ export const RECORD_COMMANDS: readonly CommandSpecLite[] = [
   { name: 'approve', description: 'AEM: approve the exact render of an item (its last checked render, the open gate)', argumentHint: '<item> [path] [gate]' },
   { name: 'reject', description: 'AEM: reject an item, with a reason', argumentHint: '<item> <reason>' },
   { name: 'client-said', description: "AEM: record the client's exact words in their decisions file (and, with --about, as their ruling)", argumentHint: '<channel|video|instance> | --about <moment|video|channel> [--ruling keep|change|remove] [--source S] [--item SHOT] <their words, or select them first>' },
-  { name: 'accept-video', description: 'AEM: the client accepted the delivered video: an implicit acceptance for each moment they did not comment on', argumentHint: '<version> <source, e.g. Frame.io, 12 Oct 2026>' },
+  { name: 'accept-video', description: 'AEM: the client accepted the delivered video: an implicit acceptance for each moment they did not comment on', argumentHint: '<version|latest> [--before <delivered master>] <source, e.g. Frame.io, 12 Oct 2026>' },
   { name: 'accept-edit', description: 'AEM: accept the ledger edits `aem integrity` found (all, or one file), with a reason', argumentHint: '[--file NAME] <reason>' },
 ]
 
@@ -66,13 +66,14 @@ export async function recordCommand(io: Io, options: PluginOptions, e: CommandRu
       ...(about ? ['--about', about] : []), ...ruling], quote)
   }
   if (e.command === 'accept-video') {
-    const a = leading(e.args, { words: 1, valueFlags: ['source'] })
+    const a = leading(e.args, { words: 1, valueFlags: ['source', 'before'] })
     const version = a.words[0]
     const source = typeof a.flags.source === 'string' && a.flags.source ? a.flags.source : a.rest.trim()
     if (!version || !source) {
-      return { text: 'Usage: /accept-video <version> <where the acceptance came from, e.g. Frame.io, 12 Oct 2026>' }
+      return { text: 'Usage: /accept-video <version|latest> [--before <delivered master>] <where the acceptance came from, e.g. Frame.io, 12 Oct 2026>' }
     }
-    return run(io, options, ['accept-video', version, '--source', source])
+    const before = typeof a.flags.before === 'string' && a.flags.before ? ['--before', a.flags.before] : []
+    return run(io, options, ['accept-video', version, '--source', source, ...before])
   }
   if (e.command === 'accept-edit') {
     const a = leading(e.args, { words: 0, valueFlags: ['file'] })

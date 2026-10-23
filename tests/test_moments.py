@@ -194,6 +194,19 @@ class PlanMoments(unittest.TestCase):
         self.assertEqual((by["fd_S01_grade"]["asked"], by["fd_S01_grade"]["asked_from"]), (True, "the plan"))
         self.assertEqual((d["direction"], d["direction_from"]), ("none", "the review profile in the registry"))
 
+    def test_other_tables_and_struck_rows_are_not_moments(self):
+        """P2's visual-plan.md (23 Oct 2026): a totals table, the shots to ask Joel for and a pacing audit sit beside
+        the moment tables, and a retired moment is struck through. Only rows of tables whose header names a moment
+        field (words, cues, job, treatment, the contract) are moments, and never a struck one."""
+        (self.w.project / "visual-plan.md").write_text(
+            "# Visual plan\n\n| Treatment | Moments |\n|---|---|\n| Animation | 23 |\n| Nothing | 6 |\n\n"
+            + PLAN.split("\n", 2)[2].replace("| fd_S01_dog |", "| ~~`fd_S01_dog`~~ |")
+            + "\n## Shots to ask Joel to film\n\n| Was | Found in his footage | Now | Still needed |\n|---|---|---|---|\n"
+              "| S1 real project | no | built | his B-roll |\n\n"
+              "## Pacing audit\n\n| Stretch | Length |\n|---|---|\n| 2:26.96–2:45.68 (19 s) | 19 s |\n")
+        _, d = self.w.run("moments", operator=False)
+        self.assertEqual(sorted(m["id"] for m in d["moments"]), ["fd_S01_grade", "fd_S01_park-map"])
+
     def test_without_the_asked_column_and_no_notes_every_moment_is_added(self):
         (self.w.project / "visual-plan.md").write_text(PLAN.replace(" Asked or added |", "").replace("|---|---|---|---|", "|---|---|---|")
                                                       .replace(" | added |", " |").replace(" | asked |", " |"))

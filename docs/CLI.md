@@ -61,6 +61,7 @@ says it did.
 | `client-said --scope channel\|video\|instance --source TEXT [--item SHOT]` | Reads the client's words from standard input and adds a dated entry to the client's decisions file: the quote exactly as typed, and who typed it and how ("typed by Yuvraj with /client-said in Claude Code" or "in a terminal"). Operator only. |
 | `client-said --about MOMENT\|video\|channel [--ruling keep\|change\|remove] --source TEXT` | The same entry (the scope follows from `--about`), and the quote as the client's ruling at that level in the labelled cases: on a moment, an explicit ruling (with `--ruling`; without one, a remark, not a ruling) carrying the moment's latest render SHA-256; on the video or the channel, a remark at that level. What `--about` names is checked before anything is written. Words the decisions file already quotes (whitespace aside; 20 characters or more) are not written again: the ruling names the entry that has them (`decisions_entry`). See [Rulings](#rulings-and-calibration). Operator only. |
 | `accept-video <version> --source TEXT` | The client accepted the delivered video: an implicit acceptance (`ruling: accepted`, `level: implicit`, the render's SHA-256 at that version) for every moment with no explicit keep, change or remove. Once per version. Operator only. |
+| `accept-video latest --source TEXT [--before FILE\|DATETIME]` | The same, for a video whose moments went out at different versions (P2: v01 to v06): each moment's newest render (highest version), its version recorded per case. `--before` counts only renders no newer than the delivered master (its modification time, 2 s slack, resolved from the working folder or the project) or an ISO date-time. Run again later, it writes only the moments whose newest render changed. Operator only. |
 | `inbox [list]`, `inbox accept <id> --ruling keep\|change\|remove\|note [--label]`, `inbox dismiss <id> --reason TEXT [--label]` | What waits on the operator, each item with the exact commands its buttons run; see Review inbox below. `accept` and `dismiss` are operator only. |
 | `check-approval <path> [--item] [--gate]` | Passes only if this file's SHA-256 has a standing approval; `state` says `approved`, `stale`, `rejected`, `none` or `missing`. |
 | `check-render <path> [--item] [--no-record]` | ffprobe against the project spec, a scan of every frame for one- and two-frame flashes, loudness and true peak when the render carries sound, SHA-256, a `render_check` event, and stale marks on earlier approvals of the item. |
@@ -302,7 +303,10 @@ After every `Bash` call the agent makes while a project is active, the plugin se
 
 - **Is it a render?** It matches a render pattern: `hyperframes render`, `npx hyperframes render` and
   `remotion render` always, plus the client's `render_sentinel.command_patterns` in the registry
-  (Joel: `bin/r.sh`, `bin/ra.sh`, `bin/renderall.sh`) and the project's in `aem.project.json`.
+  (Joel: `bin/r.sh`, `bin/ra.sh`, `bin/renderall.sh`) and the project's in `aem.project.json`. A pattern
+  counts only in a simple command that runs something: one whose program only reads or prints
+  (`head bin/r.sh`, `grep … bin/r.sh`, `git diff bin/r.sh`, a `for f in … bin/r.sh` list) is not a render,
+  and here-document bodies (`python3 - <<'EOF' … EOF`) are data, not commands (since 23 October 2026).
 - **What did it write?** Media files (the client's `approval_gates.media_extensions`) found three ways:
   the value after `-o`, `--output` or `--out`; other media paths on the command line; and any media
   file under the output folders (`render_sentinel.output_dirs`, default `renders/`, searched

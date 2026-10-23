@@ -18,6 +18,8 @@ the critic's findings on the version the client saw. An operator's ruling in the
 """
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from pathlib import Path
 
 from . import inbox, ledger, moments as momentsmod, operator
@@ -111,6 +113,46 @@ def render_at(ctx: Context, m: dict, version: str) -> Path | None:
     return None
 
 
+# File times on some disks (exFAT keeps 2 s) are not exact; a render written just before the master still counts.
+MTIME_SLACK_S = 2.0
+
+
+def _version_number(version: str) -> int:
+    m = re.search(r"\d+", version)
+    return int(m.group()) if m else -1
+
+
+def latest_render(ctx: Context, m: dict, before: float | None) -> tuple[str, Path] | None:
+    """The moment's newest render (highest version) whose file is no newer than `before` (epoch seconds), if given.
+    For a video whose moments were delivered at different versions (P2: v01 to v06)."""
+    found = []
+    for r in m.get("renders") or []:
+        p = ctx.project_dir / r["path"]
+        if not p.is_file():
+            continue
+        if before is not None and p.stat().st_mtime > before + MTIME_SLACK_S:
+            continue
+        found.append((_version_number(r["version"]), r["version"], p))
+    if not found:
+        return None
+    _, version, p = max(found, key=lambda x: (x[0], x[1]))
+    return version, p
+
+
+def parse_before(ctx: Context, value: str) -> float:
+    """--before: an existing file (its modification time: the delivered master), relative to the working folder or
+    the project, or an ISO date-time (local time when it has no offset). Epoch seconds."""
+    for p in (Path(value).expanduser(), ctx.project_dir / value if ctx.project_dir else None):
+        if p is not None and p.exists():
+            return p.stat().st_mtime
+    try:
+        t = datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise AemError(f"--before {value!r} is neither a file nor an ISO date-time",
+                       hint="name the delivered master (its modification time is used) or give e.g. 2026-10-15T02:00")
+    return (t if t.tzinfo else t.astimezone()).timestamp()
+
+
 def check_about(ctx: Context, target: str, ruling: str | None) -> dict | None:
     """What --about names, checked before anything is written: the moment (None for video or channel)."""
     if ruling and ruling not in ("keep", "change", "remove"):
@@ -151,16 +193,24 @@ def about(ctx: Context, target: str, quote: str, *, ruling: str | None, source: 
     return append(ctx, case, by="aem client-said")
 
 
-def accept_video(ctx: Context, version: str, source: str) -> dict:
-    """The client accepted the delivered cut: one implicit acceptance per moment with no explicit comment."""
+def accept_video(ctx: Context, version: str, source: str, before: str | None = None) -> dict:
+    """The client accepted the delivered cut: one implicit acceptance per moment with no explicit comment.
+
+    `version` is the delivered version (v08), or "latest": each moment's newest render, for a video whose moments
+    went out at different versions; `before` (latest only) counts only renders no newer than the delivered master."""
     operator.assert_checked("accept-video")
     if not source or not source.strip():
         raise AemError("accept-video needs --source (where the acceptance came from, e.g. \"Frame.io, 12 Oct\")")
     version = version.lower()
+    latest = version == "latest"
+    if before and not latest:
+        raise AemError("--before goes with latest only", hint="aem accept-video latest --before <delivered master> --source ...")
+    cutoff = parse_before(ctx, before) if before else None
     index = _index(ctx)
     cases = momentsmod.video_cases(ctx)
     op = ctx.client.operator_id
     written, explicit, already, no_render = [], [], [], []
+    versions: dict[str, str | None] = {}
     for m in index["moments"]:
         if m.get("treatment") == "nothing":
             continue
@@ -169,22 +219,34 @@ def accept_video(ctx: Context, version: str, source: str) -> dict:
         if any(momentsmod.case_level(c, op) == "explicit" and c.get("ruling") in ("keep", "change", "remove") for c in mine):
             explicit.append(m["id"])
             continue
-        if any(c.get("level") == "implicit" and c.get("version") == version for c in mine):
+        if latest:
+            hit = latest_render(ctx, m, cutoff)
+            v, rp = hit if hit else (None, None)
+        else:
+            v, rp = version, render_at(ctx, m, version)
+        versions[m["id"]] = v
+        if any(c.get("level") == "implicit" and c.get("version") == v for c in mine):
             already.append(m["id"])
             continue
-        rp = render_at(ctx, m, version)
         if not rp:
             no_render.append(m["id"])
+        missing = (f" No render file at {version} was found." if not latest
+                   else " No render of this moment was found" + (" made before the delivered master." if cutoff else "."))
         case = make_case(ctx, level="implicit", ruling="accepted", words=None, source=source.strip(), moment=m,
-                         index=index, render_sha256=sha256_file(rp) if rp else None, version=version,
+                         index=index, render_sha256=sha256_file(rp) if rp else None, version=v,
                          notes=(f"Ours: {ctx.client.contact} accepted the delivered video ({source.strip()}) and said "
                                 "nothing about this moment. Implicit acceptance: weaker than an explicit ruling, and "
-                                "never written as one." + ("" if rp else f" No render file at {version} was found.")))
+                                "never written as one." + ("" if rp else missing)))
         append(ctx, case, by="aem accept-video")
         written.append(m["id"])
-    ledger.record(ctx, "video_accepted", note=f"{version}: {source.strip()}", fill_stage=True, version=version,
+    label = version if not latest else "latest" + (f" before {before}" if before else "")
+    ledger.record(ctx, "video_accepted", note=f"{label}: {source.strip()}", fill_stage=True, version=version,
                   implicit=len(written), explicit=len(explicit), already=len(already) or None,
                   source="aem accept-video")
-    return {"ok": True, "version": version, "source": source.strip(), "implicit_written": len(written),
-            "explicit": explicit, "already_accepted": already, "no_render_at_version": no_render,
-            "moments": len(index["moments"])}
+    out = {"ok": True, "version": version, "source": source.strip(), "implicit_written": len(written),
+           "explicit": explicit, "already_accepted": already, "no_render_at_version": no_render,
+           "moments": len(index["moments"])}
+    if latest:
+        out["versions"] = versions
+        out["before"] = before
+    return out

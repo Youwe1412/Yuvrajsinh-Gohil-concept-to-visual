@@ -104,11 +104,15 @@ def check_rule_ids(client: Client, skills_dir: Path) -> list[dict]:
         skills_dir / client.skill if client.skill else None)
     if not skill_root or not skill_root.is_dir():
         return []
+    texts = {rel: p.read_text(encoding="utf-8", errors="replace") for rel, p in _files(skill_root).items()
+             if p.suffix.lower() in (".md", ".txt")}
+    # IDs the skill defines itself, each as a Markdown heading (`### O-15 · …`): the operator's standing direction
+    # in mergetomaster-studio's references/operator-direction.md. They are the skill's, not the rules file's.
+    heading = re.compile(rf"^#{{1,6}}\s+({pattern})\b", re.M)
+    defined |= {m.group(1) for text in texts.values() for m in heading.finditer(text)}
     findings = []
-    for rel, p in _files(skill_root).items():
-        if p.suffix.lower() not in (".md", ".txt"):
-            continue
-        cited = rule_ids_in(p.read_text(encoding="utf-8", errors="replace"), pattern)
+    for rel, text in texts.items():
+        cited = rule_ids_in(text, pattern)
         for rid in sorted(cited - defined):
             findings.append({"check": "rule-ids", "file": rel, "rule_id": rid,
                              "problem": f"{rid} is cited by the skill but not defined in {client.raw['rules_file']}"})

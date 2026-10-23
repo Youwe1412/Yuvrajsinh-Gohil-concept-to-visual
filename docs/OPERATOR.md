@@ -96,6 +96,9 @@ to work ("do whatever you think is appropriate") is `--about channel`.
 
 **Acceptance.** When Joel accepts the whole video, `/accept-video <version> <where it came from>` writes
 an implicit acceptance for every moment he did not comment on, with the delivered render's SHA-256.
+When the moments went out at different versions (P2: v01 to v06), use
+`/accept-video latest --before "Done/P2 - Claude Code Done.mov" WhatsApp, 19 Oct 2026`: each moment's
+newest render made before the delivered master.
 Silence counts only then, and never as an explicit ruling. Don't ask him to rule on individual
 animations unless he offers. Running it again for the same version writes nothing new.
 

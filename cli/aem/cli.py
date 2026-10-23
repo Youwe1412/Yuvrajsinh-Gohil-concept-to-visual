@@ -99,8 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
 
     p = sub.add_parser("accept-video", help="the client accepted the delivered cut: implicit acceptance for every moment they did not comment on (operator only)")
-    p.add_argument("version", help="the delivered version, e.g. v08")
+    p.add_argument("version", help="the delivered version, e.g. v08, or latest: each moment's newest render "
+                                   "(moments delivered at different versions)")
     p.add_argument("--source", required=True, help="where the acceptance came from, e.g. \"Frame.io, 12 Oct\"")
+    p.add_argument("--before", metavar="FILE|DATETIME",
+                   help="with latest: only renders no newer than this (the delivered master's modification time, "
+                        "or an ISO date-time)")
     _common(p)
 
     p = sub.add_parser("inbox", help="what is waiting on the operator: list | accept <id> --ruling R | dismiss <id> --reason")
@@ -409,13 +413,22 @@ def cmd_client_said(a):
 
 def cmd_accept_video(a):
     ctx = registry.context(a)
-    r = rulings.accept_video(ctx, a.version, a.source)
-    text = (f"{r['version']} accepted ({r['source']}): {r['implicit_written']} implicit acceptance(s) written; "
+    r = rulings.accept_video(ctx, a.version, a.source, before=a.before)
+    latest = r["version"] == "latest"
+    what = r["version"] if not latest else (
+        "each moment's newest render" + (f" before {r['before']}" if r.get("before") else ""))
+    text = (f"{what} accepted ({r['source']}): {r['implicit_written']} implicit acceptance(s) written; "
             f"{len(r['explicit'])} moment(s) keep their explicit ruling")
     if r["already_accepted"]:
-        text += f"; {len(r['already_accepted'])} already accepted at {r['version']}"
+        text += f"; {len(r['already_accepted'])} already accepted" + ("" if latest else f" at {r['version']}")
+    if r.get("versions"):
+        counts: dict[str, int] = {}
+        for v in r["versions"].values():
+            counts[v or "none"] = counts.get(v or "none", 0) + 1
+        text += "\n  versions: " + ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items()))
     if r["no_render_at_version"]:
-        text += f"\n  no render file at {r['version']} for: {', '.join(r['no_render_at_version'])}"
+        where = "found" if latest else f"at {r['version']}"
+        text += f"\n  no render file {where} for: {', '.join(r['no_render_at_version'])}"
     return r, text
 
 

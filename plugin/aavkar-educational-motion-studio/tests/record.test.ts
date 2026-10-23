@@ -21,6 +21,7 @@ describe('record commands', () => {
     await cmd('client-said', '--about channel --source "WhatsApp, 5 Oct 2026" I really liked what you did')
     await cmd('client-said', '--about fd_S04_50ms --ruling change --source Frame.io take the flash out')
     await cmd('accept-video', 'v08 Frame.io, 14 Sep 2026')
+    await cmd('accept-video', 'latest --before "Done/P2 - Claude Code Done.mov" WhatsApp, 19 Oct 2026')
     await cmd('accept-edit', '--file events.jsonl I added that line')
     const ran = w.calls.filter(c => c.at(-1) !== '--json').map(c => c.slice(1))
     expect(ran).toEqual([
@@ -33,6 +34,7 @@ describe('record commands', () => {
       ['client-said', '--source', 'WhatsApp, 5 Oct 2026', '--about', 'channel'],
       ['client-said', '--source', 'Frame.io', '--about', 'fd_S04_50ms', '--ruling', 'change'],
       ['accept-video', 'v08', '--source', 'Frame.io, 14 Sep 2026'],
+      ['accept-video', 'latest', '--source', 'WhatsApp, 19 Oct 2026', '--before', 'Done/P2 - Claude Code Done.mov'],
       ['accept-edit', '--file', 'events.jsonl', '--reason', 'I added that line'],
     ])
     const stdinOf = (i: number) => w.stdins[w.calls.indexOf(w.calls.filter(c => c.at(-1) !== '--json')[i] as string[])]
