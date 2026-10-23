@@ -32,7 +32,7 @@
         },
         "P2": {
           "dir": "P2 - Claude Code",
-          "note": "P2's current cut is Videos and Media/RoughCut.mp4 (25/1, 3840x2160). No HyperFrames project yet."
+          "note": "P2's cut is Videos and Media/RoughCut.mp4 (25/1, 3840x2160). HyperFrames project in Animations/ (pinned 0.8.139); renders through bin/r.sh (the sentinel checks them) and batches through bin/r_queue.py --detach (background: the sentinel cannot see them; run aem check-render and aem evidence on each). Delivered 15 Oct 2026 (Done/P2 - Claude Code Done.mov, each moment at its own version, v01-v06); Joel accepted it with no changes on WhatsApp, 19 Oct 2026 (reviews/joel/2026-10-19-whatsapp.md); paid 23 Oct 2026."
         }
       },
       "decisions_file": "joel-decisions.md",
@@ -133,7 +133,8 @@
         "music": {
           "library": "Epidemic Sound",
           "vocals_under_speech": false,
-          "beds_per_segment": 1
+          "beds_per_segment": 1,
+          "policy": "only where it does a job: picture with no teaching under it, a punchline set-up, a chapter mark, the one reveal; teaching dry"
         },
         "loudness": {
           "master_lufs_integrated": -14,
@@ -152,11 +153,19 @@
         "sources": {
           "libraries": "M-25, E-09",
           "cue_kinds": "J-05",
-          "music": "J-03, E-09",
+          "music": "J-03, E-09; policy: Yuvraj, P2, 14 Oct 2026 (O-26), an override of E-09's one bed per segment; skill references/music.md",
           "loudness": "E-08",
           "generated_sfx": "Yuvraj's decision, 2026-10-19: earshot and Claude Code made SFX may be used; Joel's open question in joel-decisions.md is still unanswered; J-01, B-26 apply",
-          "llm_upload": "client material stays on this machine"
-        }
+          "llm_upload": "client material stays on this machine",
+          "sfx_method": "Yuvraj, P2, 7 Oct 2026 (O-24): 'do SFX within Animation'; the Tuan Ly P12 method",
+          "masters_carry_stems": "Yuvraj, P2, 14 Oct 2026 (O-25): the 390 separate cue clips disabled in Final Cut, the masters' stems shipped; an override of M-25's separate editable clips",
+          "excluded_paths": "Yuvraj, P2, 7 Oct 2026: P1's SFX set 'worst and not accurate'"
+        },
+        "sfx_method": "synthesised from each scene's own timeline tags (P2: lib/sound.js, bin/g4_schedule.mjs, bin/g4_sound.py), real recordings for keys, Return, Esc and the mouse",
+        "masters_carry_stems": true,
+        "excluded_paths": [
+          "~/Documents/Epidemic Sound/SFX"
+        ]
       },
       "moments": {
         "plan_files": [
@@ -225,7 +234,7 @@
         "direction": {
           "P2": "none"
         },
-        "summary": "Joel reviews the finished video, never individual animations. Approval, feedback and any timestamped instructions arrive on Frame.io; some feedback arrives on WhatsApp. He never sees the production process. How much he directs varies by video, and the absence of notes is itself a decision: on P1 he gave 66 timestamped notes; on P2 none, trusting the editor's judgment."
+        "summary": "Joel reviews the finished video, never individual animations. Approval, feedback and any timestamped instructions arrive on Frame.io; some feedback arrives on WhatsApp. He never sees the production process. How much he directs varies by video, and the absence of notes is itself a decision: on P1 he gave 66 timestamped notes; on P2 none, trusting the editor's judgment. P2 (no notes by his choice) drew no Frame.io comments at all: he accepted it on WhatsApp, 17 and 19 Oct 2026, with no changes and praise for the intro."
       },
       "idle_minutes": 10,
       "render_sentinel": {
@@ -235,7 +244,7 @@
         "output_dirs": [
           "renders"
         ],
-        "note": "P1 renders through bin/r.sh (full frame), bin/ra.sh (alpha .mov) and bin/renderall.sh; all write to renders/."
+        "note": "P1 renders through bin/r.sh (full frame), bin/ra.sh (alpha .mov) and bin/renderall.sh; P2 through bin/r.sh (FORMAT=mov for alpha overlays). All write to renders/. P2's bin/r_queue.py --detach renders in the background, after the command has ended, so the sentinel never sees those renders."
       }
     }
   ]

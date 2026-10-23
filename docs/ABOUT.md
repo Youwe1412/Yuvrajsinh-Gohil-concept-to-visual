@@ -375,7 +375,7 @@ What each part misses:
 | Operator-only commands | an agent that strips the agent markers and allocates a terminal, or writes a nonce hash file with a shell command, passes: the record shows the command it ran (observed) and how each record was made (`via`) | — |
 | Ledger integrity | a ledger and its manifest rewritten consistently; a line identical to one AEM wrote; lines already there before AEM's first write (the baseline) | — |
 | Stage inference | work that changes no plan file, still, scene source or render; work while any stage is open (it stays in that stage) | a stray write to `shotlist.md` opens G2 when nothing else was open |
-| Render sentinel | background renders; unlisted render scripts; renders written outside `renders/` and not named | other media changing under `renders/` during the command is checked too |
+| Render sentinel | background renders (P2's `bin/r_queue.py --detach`: run `aem check-render` on each); unlisted render scripts; renders written outside `renders/` and not named | other media changing under `renders/` during the command is checked too; a script name inside a quoted string or a `-c` argument (read-only programs and here-document bodies are skipped since 23 Oct 2026) |
 | Recall | rulings not written as `## ` entries; quotes not in `>` lines or quotation marks; long quotes are cut with an ellipsis (the agent reads the file for the rest); a video's direction until its moments index is built | — |
 | Moments | plan tables that are not Markdown tables; a moment's words when `data/words.json` drifts | "asked" is by time: a moment we added over footage the client asked for at that time counts as asked |
 | Evidence | a scene that never holds still for a quarter second (first and last frame only); which element moved (it measures the whole picture); cue words nobody wrote down (guessed from motion, and labelled so) | the strip sits on the largest change, which may be a cut |
@@ -596,4 +596,33 @@ critic agreement figures (the skill now has the critic write `critic.json`; P1 h
 and B-29 hold on a second video; the first rulings on treatments other than animation, if P2's plan
 uses footage or screen recordings; and the first change or keep in his own words, since none of P1's
 three changes has them. Until then calibrate reports development data.
+
+### 13.6 What Joel's review of P2 showed (23 October 2026)
+
+P2 was delivered on 15 October 2026 (`Done/P2 - Claude Code Done.mov`, SHA-256 `7029f231…058da`) with
+45 moments, every one *added*. Joel left **no Frame.io comments at all**; his verdict came on WhatsApp:
+"Hi, the intro is absolutely awesome 👌", "I love it", "You've done an amazing job here" (17 October) and
+"Hi, no I think its all ready to go :) happy for you to send me the invoice" (19 October). No changes,
+against P1's three. P2's hypothesis (`docs/P2-HYPOTHESIS.md`) held, as development data: one video.
+
+What it changed in AEM and around it:
+
+- **Acceptance across versions.** P2's moments went out at v01 to v06, so `accept-video <version>` could
+  not record it; `accept-video latest [--before <delivered master>]` takes each moment's newest render.
+- **The record was thin, and why.** The operator approved in conversation ("Render", "execute"), not with
+  `/approve` (run once, through the delivery dialog) or `/stage` (never; AEM inferred G2 and G4), and the
+  agent never ran `aem chose`; no render got a `critic.json`, so calibrate has no critic agreement for P2.
+  The skill (v3) now hands the operator paste-ready `/approve` lines at the end of a batch instead of
+  stopping, and has the agent run `aem chose` and write `critic.json` when asked whether the work is the
+  best it can be.
+- **Sentinel noise.** Reading a render script (`head bin/r.sh`) or a here-document that named it set the
+  sentinel off; it now skips read-only programs and here-document bodies. Detached batch renders
+  (`bin/r_queue.py --detach`) are still invisible to it.
+- **House craft.** The operator's rulings on P2 that apply to any client are in the craft baseline as
+  A-27…A-34 (live preview before render, joins frame to frame, words over footage with no field, real UI
+  redrawn, untagged frame grabs, hooks that promise, music only where it does a job, sound from the
+  picture), and A-11, A-20, A-22, A-24 gained P2's specifics. The Joel-specific ones are in the
+  `mergetomaster-studio` skill v3 (`references/operator-direction.md`).
+- **Still the operator's to run:** `/client-said` for his two messages, then `/accept-video latest`,
+  `aem calibrate` and `aem report` (the commands are in P2's `reviews/joel/2026-10-19-whatsapp.md`).
 
