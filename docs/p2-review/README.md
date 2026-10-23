@@ -1,4 +1,6 @@
-# P2 delivery and Joel's review · Claude Code video · MergeToMaster
+# P2 delivery, Joel's review and payment · Claude Code video · MergeToMaster
+
+Delivered 15 Oct 2026 · accepted with no changes 19 Oct · paid 23 Oct (GBP 220.08).
 
 Written 23 Oct 2026. Every figure is marked **measured** (read by a tool from a file or a page) or
 **reconstructed** (read or counted by hand).
@@ -56,7 +58,25 @@ comments depending on its settings, so this shows what the share page shows, not
   answers "No Changes in Claude Code Video?".
 - **The intro singled out** on 17 Oct: the opening as a whole, not one shot. A video-level keep.
 - **No shot-level rulings.** He gave none, and he is not asked for any.
-- **Invoice requested.** Billing, not a ruling.
+- **Invoice requested.** Billing, not a ruling. Paid on 23 Oct (below).
+
+## Paid, 23 Oct 2026
+
+Joel paid for P2 four days after accepting it.
+
+![Infinity payment receipt: GBP 220.08 from Joel Belton, 23 Oct 2026](payment-2026-10-23.webp)
+
+| Field | Value, as the receipt shows it |
+|---|---|
+| From | JOEL BELTON |
+| Amount | GBP 220.08 |
+| Payment date | October 23, 2026 |
+| Received in | Yuvrajsinh Gohil's Infinity wallet |
+| Notice | email from Infinity `<support@infinityapp.in>`, Fri 23 Oct 2026, 2:33:01 PM +0530, subject "Payment Received: GBP 220.08 from JOEL BELTON in Your Infinity Wallet" |
+
+Read by hand from the screenshot (reconstructed). The receipt does not name the video; that this
+payment is for P2 is Yuvraj's statement: Joel asked for the P2 invoice on 19 Oct ("happy for you to
+send me the invoice", above), and this is the payment that followed.
 
 ## Against the hypothesis
 
@@ -105,4 +125,5 @@ baseline was dropped on 7 Oct.
 |---|---|---|
 | `whatsapp-2026-10-17-19.png` (this repo, avatar blurred) | `80867c99565af40d23b55c2e602c1464bfb6afdd63b470815a7b7cf18b4fa299` | made from the original below with Pillow: Gaussian blur on the 72 px avatar box only |
 | Original screenshot, `.webp` (P2 folder, not published) | `0131380fa613d5a52ed6c460667b6d1e4724cf02b362475987c6ab43f0faa292` | pasted by Yuvraj into Claude Code, 23 Oct 2026; kept at P2 `reviews/joel/2026-10-19-whatsapp.webp` |
+| `payment-2026-10-23.webp` (unedited) | `fc2e972dc3bb67925031592537cd4e82b65340848ebff6cb5bc51c19a8404713` | screenshot of Infinity's email, pasted by Yuvraj into Claude Code, 23 Oct 2026; also kept at P2 `reviews/joel/2026-10-23-payment-received.webp` |
 | `frameio-2026-10-23.jpg` | `726a3fe34467a78e6aa3581749640a1b58b9f7839d87121843a8a8d7b438f6e0` | the share page in Claude's built-in browser, 23 Oct 2026 |

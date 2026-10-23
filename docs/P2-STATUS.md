@@ -6,6 +6,7 @@ Status as of 9 Oct 2026, 23:30 IST. Generated from `aem moments` (`moments/index
 
 - **Delivered:** `P2 - Claude Code Done.mov`, exported 15 Oct 2026, 02:00 IST; on Frame.io at [f.io/dBF09OXt](https://f.io/dBF09OXt). SHA-256 `7029f2311417bf611be9c6e88e6f768b104be7dd195b654e49f515ba761058da`, 3840×2160, 25 fps, 666.36 s.
 - **Joel's review:** accepted with no changes on WhatsApp, 19 Oct 2026: "Hi, no I think its all ready to go :) happy for you to send me the invoice". 0 Frame.io comments on the share page, 23 Oct. Screenshots, transcript and hashes: [p2-review](p2-review/README.md).
+- **Paid:** 23 Oct 2026, GBP 220.08 from Joel Belton, by the Infinity receipt in [p2-review](p2-review/README.md#paid-23-oct-2026).
 - **Not in AEM yet:** Joel's words wait for the operator's `client-said`; the master went out with 0 standing approvals and no delivery event in `events.jsonl` (measured).
 
 ## Counts (measured by AEM unless marked)

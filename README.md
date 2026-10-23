@@ -1,9 +1,10 @@
 # Aavkar Educational Motion Studio
 
-> **P2 delivered and accepted, 23 Oct 2026.** The final Claude Code video:
+> **P2 delivered, accepted and paid, 23 Oct 2026.** The final Claude Code video:
 > **[f.io/dBF09OXt](https://f.io/dBF09OXt)** (Frame.io, `P2 - Claude Code Done.mov`, 3840×2160, 25 fps, 11:06).
 > Joel's review, 19 Oct 2026, on WhatsApp: "Hi, no I think its all ready to go :) happy for you to send me the invoice".
-> No change requests and no comments on the Frame.io share page; on 17 Oct: "the intro is absolutely awesome". Proof, hashes and
+> No change requests and no comments on the Frame.io share page; on 17 Oct: "the intro is absolutely awesome".
+> Paid on 23 Oct 2026: GBP 220.08 from Joel Belton (Infinity receipt). Proof, hashes and
 > what AEM did not record: [docs/p2-review](docs/p2-review/README.md).
 
 > **Capstone status, 9 Oct 2026** (snapshot first taken 7 Oct) (100x Engineers C7, "Concept to Visual"): the case study is
