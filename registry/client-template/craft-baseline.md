@@ -1,9 +1,11 @@
 # Aavkar craft baseline
 
 The house defaults every {{CLIENT_NAME}} project starts from, before {{CONTACT}} has ruled on anything.
-The rows `A-01`…`A-26` in [rules.md](rules.md) cite the sections below. Taken from documented motion
+The rows `A-01`…`A-34` in [rules.md](rules.md) cite the sections below. Taken from documented motion
 practice and from a generic motion-director brief we studied in October 2026, then checked against our
-earlier client work.
+earlier client work. A-27…A-34 and the additions to A-11, A-20, A-22 and A-24 (23 October 2026) come from
+the operator's rulings on MergeToMaster P2, a video the client accepted with no changes; they are house
+craft for any client, with that one video as their evidence.
 
 **Where this sits.** Lowest tier. Invariants > the operator's latest specific instruction > the client's
 rulings (`{{CLIENT_ID}}-decisions.md`) > this client's Brand and Motion rules > this baseline > craft habits.
@@ -22,6 +24,8 @@ references in the project's `references/` folder and it would not look weaker. T
 - A standalone piece (a trailer, a launch film, a social cut) opens on a finished picture that works as a
   still on a busy feed, and the hook lands in the first second (A-02). An insert placed into the client's
   edit inherits the edit's opening instead.
+- A hook or agenda promises its payoff and never shows it: the payoff's title stays readable, its content
+  is blurred past reading (tight on the words, the meaning crisp), so the curiosity gap stays open (A-32).
 
 ## 2. Continuity and handoffs
 
@@ -29,6 +33,9 @@ references in the project's `references/` folder and it would not look weaker. T
   Write the handoff positions down before building either scene (§9).
 - Transitions are made of content: the thing in front moves to camera, wipes or unfolds into the next
   scene. A hard cut only when size, direction and subject match, and only on a cue word or beat (A-04).
+- Back-to-back inserts meet frame to frame: one that is followed by another holds its last frame to the
+  next one's first word, because a gap under half a second shows a flash of the A-roll. No graphic is
+  flashed between two live shots; one entered by a continuous camera move is not a flash (A-28).
 
 ## 3. Movement
 
@@ -43,15 +50,25 @@ references in the project's `references/` folder and it would not look weaker. T
 ## 4. Type
 
 - Type is motion, not captions: it enters, masks and reveals with the words (A-08).
-- On screen at least 0.3 s per word, 0.7 s minimum. Over busy picture it sits on a plate. If the picture
-  already says it, cut the word.
-- Text contrast at least 4.5:1, inside the safe margins, with no collisions (A-22). AEM does not measure
-  this yet (it has no text geometry): the critic checks it on the phone crops.
+- On screen at least 0.3 s per word, 0.7 s minimum. Over busy graphics it sits on a plate; over the
+  client's footage, see A-29. If the picture already says it, cut the word.
+- Text contrast at least 4.5:1, inside the safe margins, with no collisions (A-22). Measure type size on
+  screen (font size × every camera and scene scale), not in CSS: a camera that fits a tall, mostly empty
+  panel quietly halves it. AEM does not measure this yet (it has no text geometry): the critic checks it on
+  the phone crops.
+- Words over the client's footage get no darkening of any kind behind them (no strip, box, blur or
+  gradient: it reads as unnatural). Measure the footage behind the text (its brightest 5 % over the span);
+  carry legibility with a shadow that hugs the letters; if a spot is too bright, move the text. Keep the
+  words clear of the speaker's head, on both sides if needed (A-29).
 
 ## 5. Scale, layout, camera, formats
 
 - Vary scale and layout: macro, wide, overhead, full-frame type. Never the same layout twice in a row (A-10).
-- Camera moves are motivated, and the fast ones carry motion blur (A-11).
+- Camera moves are motivated and land their framing on the word; between moves the frame is still while
+  text is read. The camera moves over one plane with the content (depth that carries no meaning splits a
+  move and pulls the eye), and every framing keeps its subject inside safe padding (10 % of the width, about
+  11 % of the height). Fast moves carry natural motion blur: about a 90° shutter, 16 samples a frame, never
+  few-sample frame blending, which ghosts (A-11).
 - 3D only where it explains something spatial, with product-shot lighting, a camera at 35–55°, real
   materials and labels as HTML tracked from the scene (A-12).
 - Recompose each format rather than crop it, and keep 9:16 content out of the platform's UI zones (A-25).
@@ -66,7 +83,14 @@ the client's own never-list from their *remove* rulings in `critic/labelled-case
 - Capture the real product at 2×. Take the logo as SVG from the source and sample the real colours and
   fonts. Never redraw a logo (A-14).
 - Never show a raw screenshot as a static slab. Rebuild its panels, icons and text as live HTML or SVG so
-  each part can move (A-15).
+  each part can move (A-15). A screen recording enlarged past about 1:1 goes soft beside crisp animation:
+  re-typeset it on its own character grid, every state transcribed from its frames.
+- Explain a tool with its real interface, redrawn as UI from references captured in the real tool
+  (strings, glyphs, colours, in the state the scene shows), not with abstract boxes; what people type is
+  drawn as text bars, and no caption says it was redrawn. Never guess a UI string (A-30).
+- A video frame used as a picture inside a composition is written untagged (decode raw pixels, write the
+  PNG without colour chunks): browsers colour-manage tagged frames and draw them darker than the frame
+  they continue (A-31).
 - Generated images are references (style frames, character sheets, key poses) rebuilt in code. They go on
   screen only if the brief allows, labelled as concept (A-16).
 - Every claim on screen or in voice traces to an exact source sentence and where it came from. Nothing is
@@ -78,12 +102,20 @@ the client's own never-list from their *remove* rulings in `critic/labelled-case
 
 - Sound effects only for real on-screen events: one soft whoosh per scene change, clicks and impacts on
   real actions, each in its own frequency range just above the music (A-18).
+- Sound comes from the picture: each animation's sounds are made from its own timeline (tag the tween that
+  makes the sound; synthesise it for what that tween does) or are real recordings (keys, mouse), and in
+  screen recordings every click, scroll and camera move is keyed to an event measured in the footage. A
+  generic stock SFX folder dropped on cues sounds inaccurate (A-34).
 - Music matches the energy and sits low, under the voice. Trim or offset the track at bar lines rather
   than bend the picture. A music prompt never names a brand or artist (A-19).
+- In a teaching video, music plays only where it does a job: under picture with no teaching, to set up a
+  punchline, to mark a chapter, or to carry the one reveal. Teaching is dry: music stops where
+  explanation starts (the coherence principle) (A-33).
 - A finished mix meets the client's loudness target (web default −14 LUFS) with true peak at or below
-  −1 dBTP (A-20). AEM measures every render that carries sound; set `loudness.target_lufs` for the client
-  or project to have it checked. Inserts that ship silent, with cues as separate clips, say "not checked:
-  no audio stream", which is correct.
+  −1 dBTP (A-20). Measure the encoded file that is delivered, not only the mix: an AAC encode can add most
+  of a decibel of true peak. AEM measures every render that carries sound; set `loudness.target_lufs` for
+  the client or project to have it checked. Inserts that ship silent, with cues as separate clips, say "not
+  checked: no audio stream", which is correct.
 - Every cue lands within one frame of its word or beat (A-21), measured in `sync.json`. For narrated work
   the clock is the narration's word IDs, not a music beat grid.
 
@@ -95,7 +127,13 @@ the client's own never-list from their *remove* rulings in `critic/labelled-case
   pinned locally.
 - Before real work, render a 3–5 s piece through the whole pipeline: render, `aem check-render`,
   evidence, placement file and the import into the editor (A-24). A pipeline break found at G1 costs
-  minutes; at delivery it costs the day.
+  minutes; at delivery it costs the day. Long renders go through a queue that starts one only when memory
+  allows (4K motion-blurred renders took about 4.8 GB each; four at once ran a 24 GB Mac out of memory and
+  the batch died with the session); versions are never reused, and an old render is retired only after
+  its replacement passes the check.
+- Refine before rendering: each scene in a live preview that reloads as it is edited, and the scenes
+  together with the client's voice, judged in context, never from stills. Render only once the look is
+  approved; a fast draft first when a join or a timing is in doubt (A-27).
 
 ## 10. The critic
 

@@ -12,7 +12,7 @@ the first project.
 | Motion System (HTML page) | v1 | Teaching jobs, motion vocabulary, voice sync, the studio gates, the critic |
 | [rules.md](rules.md) | {{DATE}} | Every rule with an ID, kind, source tags, status and page |
 | [{{CLIENT_ID}}-decisions.md]({{CLIENT_ID}}-decisions.md) | {{DATE}} | The client's own words, requests and rulings, dated and scoped |
-| [craft-baseline.md](craft-baseline.md) | {{DATE}} | Aavkar's house craft defaults (rules A-01…A-26): the floor before the client rules, the critic's order, what AEM measures |
+| [craft-baseline.md](craft-baseline.md) | {{DATE}} | Aavkar's house craft defaults (rules A-01…A-34; A-27…A-34 from MergeToMaster P2): the floor before the client rules, the critic's order, what AEM measures |
 
 Agents read the Markdown text versions of the Brand and Motion pages in `text/`, never the HTML.
 
