@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import VERSION, approvals, calibrate, clients, codex, context, doctor, drift, evidence, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, rulings, sentinel
+from . import VERSION, approvals, calibrate, clients, codex, context, doctor, drift, evidence, inbox, integrity, ledger, moments, observe, operator, recall, registry, render, review, rounds, rulings, sentinel
 from . import fps as fpsmod
 from .util import AemError, expand, fmt_duration, strip_private
 
@@ -99,8 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
 
     p = sub.add_parser("accept-video", help="the client accepted the delivered cut: implicit acceptance for every moment they did not comment on (operator only)")
-    p.add_argument("version", help="the delivered version, e.g. v08")
+    p.add_argument("version", help="the delivered version, e.g. v08, or latest: each moment's newest render "
+                                   "(moments delivered at different versions)")
     p.add_argument("--source", required=True, help="where the acceptance came from, e.g. \"Frame.io, 12 Oct\"")
+    p.add_argument("--before", metavar="FILE|DATETIME",
+                   help="with latest: only renders no newer than this (the delivered master's modification time, "
+                        "or an ISO date-time)")
     _common(p)
 
     p = sub.add_parser("inbox", help="what is waiting on the operator: list | accept <id> --ruling R | dismiss <id> --reason")
@@ -139,6 +143,19 @@ def build_parser() -> argparse.ArgumentParser:
                    help="a cue word's onset, seconds into the render (repeatable; for hand-measured onsets)")
     p.add_argument("--video", action="store_true", help="the path is the assembled cut: one contact sheet per moment")
     p.add_argument("--offset", type=float, default=0.0, help="(--video) seconds to add to timeline times")
+    _common(p)
+
+    p = sub.add_parser("chose", help="record a decision of ours where the brief and the client's rulings left a gap, and why")
+    p.add_argument("what", help="the decision, in a few words")
+    p.add_argument("--why", required=True, help="one line: what the viewer understands better because of it")
+    p.add_argument("--moment", help="the moment it is about (default: the open stage's scene)")
+    p.add_argument("--rule", action="append", default=[], metavar="RULE_ID", help="a rule it leans on (repeatable)")
+    p.add_argument("--alt", action="append", default=[], metavar="TEXT", help="an option considered and not taken (repeatable)")
+    _common(p)
+
+    p = sub.add_parser("rounds", help="each moment's versions side by side: checks, critic findings fixed, kept or back, sound-off read")
+    p.add_argument("--moment")
+    p.add_argument("--no-write", action="store_true")
     _common(p)
 
     p = sub.add_parser("import-review", help="map a Frame.io comments CSV to shots and word IDs")
@@ -396,13 +413,22 @@ def cmd_client_said(a):
 
 def cmd_accept_video(a):
     ctx = registry.context(a)
-    r = rulings.accept_video(ctx, a.version, a.source)
-    text = (f"{r['version']} accepted ({r['source']}): {r['implicit_written']} implicit acceptance(s) written; "
+    r = rulings.accept_video(ctx, a.version, a.source, before=a.before)
+    latest = r["version"] == "latest"
+    what = r["version"] if not latest else (
+        "each moment's newest render" + (f" before {r['before']}" if r.get("before") else ""))
+    text = (f"{what} accepted ({r['source']}): {r['implicit_written']} implicit acceptance(s) written; "
             f"{len(r['explicit'])} moment(s) keep their explicit ruling")
     if r["already_accepted"]:
-        text += f"; {len(r['already_accepted'])} already accepted at {r['version']}"
+        text += f"; {len(r['already_accepted'])} already accepted" + ("" if latest else f" at {r['version']}")
+    if r.get("versions"):
+        counts: dict[str, int] = {}
+        for v in r["versions"].values():
+            counts[v or "none"] = counts.get(v or "none", 0) + 1
+        text += "\n  versions: " + ", ".join(f"{v} ×{n}" for v, n in sorted(counts.items()))
     if r["no_render_at_version"]:
-        text += f"\n  no render file at {r['version']} for: {', '.join(r['no_render_at_version'])}"
+        where = "found" if latest else f"at {r['version']}"
+        text += f"\n  no render file {where} for: {', '.join(r['no_render_at_version'])}"
     return r, text
 
 
@@ -476,6 +502,22 @@ def cmd_evidence(a):
                    + (f"\n  no sheet for: {', '.join(r['skipped'])}" if r["skipped"] else ""))
     r = evidence.build(ctx, a.path, moment=a.moment, cue_at=a.cue_at, cue_ids=a.cue)
     return r, f"{r['toast']} · {r['poses']} poses · {r['seconds']} s\n  {r['evidence_md']}"
+
+
+def cmd_chose(a):
+    ctx = registry.context(a)
+    r = rounds.chose(ctx, a.what, why=a.why, moment=a.moment, rules=a.rule, alternatives=a.alt)
+    c = r["choice"]
+    return r, f"Recorded choice{' on ' + c['scene'] if c.get('scene') else ''}: {c['note']} (why: {c['why']})"
+
+
+def cmd_rounds(a):
+    ctx = registry.context(a)
+    r = rounds.rounds(ctx, a.moment, write=not a.no_write)
+    text = r.pop("markdown")
+    if r.get("written"):
+        text += f"\nWritten to {r['written']}"
+    return r, text
 
 
 def cmd_moments(a):
@@ -601,7 +643,7 @@ COMMANDS = {
     "approve": cmd_approve, "reject": cmd_reject, "client-said": cmd_client_said,
     "check-approval": cmd_check_approval, "check-render": cmd_check_render, "import-review": cmd_import_review,
     "integrity": cmd_integrity, "accept-edit": cmd_accept_edit, "doctor": cmd_doctor, "drift": cmd_drift, "observe": cmd_observe,
-    "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client,
+    "rendered": cmd_rendered, "inbox": cmd_inbox, "new-client": cmd_new_client, "chose": cmd_chose, "rounds": cmd_rounds,
 }
 
 

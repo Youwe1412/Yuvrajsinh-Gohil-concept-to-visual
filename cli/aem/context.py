@@ -17,8 +17,8 @@ PRINCIPLE = ("AEM observes and records. It never blocks work in a session the op
 
 # The commands that write the record: the agent asks the operator to run them.
 ASK_FOR = "`/approve <item>`, `/reject <item> <reason>`, `/client-said <scope> <their exact words>`, `/stage <gate> [scene]`"
-OPEN = ("`aem status`, `aem recall`, `aem check-render`, `aem check-approval`, `aem report`, `aem integrity`, "
-        "`aem drift`, `aem inbox` and `aem import-review`")
+OPEN = ("`aem status`, `aem recall`, `aem check-render`, `aem check-approval`, `aem evidence`, `aem rounds`, "
+        "`aem chose`, `aem report`, `aem integrity`, `aem drift`, `aem inbox` and `aem import-review`")
 
 
 def record_files(ctx: Context) -> list[str]:
@@ -62,6 +62,10 @@ def build(ctx: Context) -> dict:
         f"delivery (`aem check-approval <render>`): delivering media with no current approval asks {op} first, and "
         "a delivery they stop stays stopped until they say otherwise.",
     ]
+    lines.append(f"- When you fill a gap the brief, the plan and {first}'s rulings left open (a default, a treatment, a "
+                 "timing), record it: `aem chose \"<what>\" --why \"<what the viewer understands better>\" [--moment M] "
+                 "[--rule ID]`. At review, AEM tells the changes that rest on our choices from the ones that do not. "
+                 "After a re-render, `aem rounds` shows which earlier findings each version fixed, kept or brought back.")
     integ = integrity.summary(ctx) if ctx.project_dir else {"findings": 0}
     if integ["findings"]:
         lines.append(f"- AEM integrity: {integ['findings']} ledger difference(s) in {', '.join(integ['files'])} were not "

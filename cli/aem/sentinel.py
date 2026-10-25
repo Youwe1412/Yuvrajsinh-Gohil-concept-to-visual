@@ -44,10 +44,43 @@ def settings(ctx: Context) -> dict:
     }
 
 
+# Programs that only read or print what they are given: a render script named after one of them is being looked
+# at, not run (`head bin/r.sh`, `grep -n MB bin/r.sh`, a `for f in … bin/r.sh` list). find and xargs are left out:
+# they can run what they name.
+READERS = frozenset({
+    "cat", "head", "tail", "less", "more", "bat", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "wc", "ls",
+    "stat", "file", "shasum", "sha256sum", "md5", "md5sum", "diff", "cmp", "echo", "printf", "nl", "cut", "sort",
+    "uniq", "strings", "xxd", "hexdump", "od", "open", "code", "git", "which", "type", "for", "select", "case",
+})
+_SEGMENT = re.compile(r"&&|\|\||[;&|\n()]")
+_ASSIGNMENT = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+")
+_KEYWORDS = ("do", "then", "else", "time", "!", "{")
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n.*?^\s*\2\s*$", re.S | re.M)
+
+
+def _without_heredocs(command: str) -> str:
+    """The command with each here-document's body removed: a script fed to python3 or cat is data, not a command
+    (`python3 - <<'EOF' … "bin/r.sh" … EOF` set the sentinel off on 23 Oct 2026)."""
+    return _HEREDOC.sub(lambda m: m.group(0).split("\n", 1)[0] + "\n", command)
+
+
+def _program(segment: str) -> str:
+    """The program a simple command runs: its first word after variable assignments and shell keywords."""
+    s = _ASSIGNMENT.sub("", segment.strip())
+    words = s.split()
+    while words and words[0] in _KEYWORDS:
+        words = words[1:]
+    return words[0] if words else ""
+
+
 def is_render(command: str, cfg: dict) -> str | None:
+    """The pattern that makes this command a render, or None. A pattern counts only in a simple command that runs
+    something; one that only reads the script (READERS) is not a render."""
+    segments = [s for s in _SEGMENT.split(_without_heredocs(command)) if s.strip()] or [command]
     for p in cfg["command_patterns"]:
-        if re.search(p, command):
-            return p
+        for seg in segments:
+            if re.search(p, seg.strip()) and _program(seg) not in READERS:
+                return p
     return None
 
 

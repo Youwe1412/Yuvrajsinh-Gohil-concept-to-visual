@@ -45,6 +45,21 @@ class Rendered(WorldCase):
         self.assertTrue(d["render"])
         self.assertEqual((d["outputs"], self.checks()), ([], []))
 
+    def test_reading_the_render_script_is_not_a_render(self):
+        """23 Oct 2026, P2: `head bin/r.sh` set the sentinel off. A command that only reads or lists the script is
+        not a render; one that runs it still is, however it is written."""
+        for command in ('head -45 bin/r.sh', 'grep -n MB_SAMPLES bin/r.sh | head -3', 'git diff bin/r.sh',
+                        'for f in bin/g4_cues.py bin/r.sh; do echo "== $f"; head -9 "bin/$f"; done',
+                        'cat bin/r.sh && echo bin/r.sh',
+                        "python3 - <<'EOF'\nnote = 'renders through bin/r.sh (checked)'\nprint(note)\nEOF",
+                        'cat > notes.md <<EOF\nrun bin/r.sh a\nEOF\nwc -l notes.md'):
+            self.assertFalse(self.rendered(command, probe_only=True)["render"], command)
+        for command in ('bin/r.sh cc_S01_model', 'FORMAT=mov MB=0 bin/r.sh cc_S08_comment v02',
+                        'cd x && ./bin/r.sh a', 'for id in a b; do bin/r.sh "$id"; done',
+                        'head -3 bin/r.sh; bin/r.sh a', '(cd "$ROOT" && bin/r.sh a)', 'nohup bin/r.sh a &',
+                        "cat <<'EOF'\nnot this one\nEOF\nbin/r.sh a"):
+            self.assertTrue(self.rendered(command, probe_only=True)["render"], command)
+
     def test_output_flag_found_checked_and_recorded(self):
         old = make_video(self.renders / "old_v01.mp4", frames=20)
         os.utime(old, (time.time() - 3600, time.time() - 3600))

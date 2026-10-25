@@ -15,6 +15,11 @@
 > the animations themselves, as AEM's evidence frames show them, are in [docs/showcase](docs/showcase/README.md).
 > Demo: the P1 video delivered to Joel (the submitted link) and the P2 showcase with 1080p proxies ([docs/showcase](docs/showcase/README.md)).
 > The same workflow on two other creators, anonymized: [CASE-STUDY §j](docs/CASE-STUDY.md#j-beyond-joel-the-same-workflow-on-two-other-creators-outside-the-measured-run). Updated after Joel's Frame.io review.
+>
+> **P2 outcome, 23 Oct 2026:** delivered 15 Oct with 45 moments; Joel accepted it with no changes on WhatsApp
+> (17 and 19 Oct: "the intro is absolutely awesome"), and paid on 23 Oct. What it changed in AEM (`accept-video
+> latest`, moments read only from moment tables, a quieter sentinel, craft baseline A-27…A-34):
+> [ABOUT §13.6](docs/ABOUT.md#136-what-joels-review-of-p2-showed-23-october-2026).
 
 > **AEM observes and records. It never blocks work in a session the operator is sitting in. The record
 > is the product: Joel's rulings in his words, approvals tied to the exact render, the critic's
@@ -101,11 +106,17 @@ AEM extends the `mergetomaster-studio` skill's formats rather than forking them:
 
 - `<project>/events.jsonl`: the skill's `{ts, gate, scene, event, note}` lines, plus AEM's own
   events (pause, resume, session and turn events, idle, inferred stages, one `observed` event per tool
-  call, render checks, approvals, delivery outcomes, inbox rulings, accepted edits).
+  call, render checks, approvals, delivery outcomes, inbox rulings, accepted edits, and `choice`: a
+  decision the agent made where the brief and the client's rulings left a gap, with `why`, `rule_ids`
+  and `alternatives`, written by `aem chose`).
 - `<project>/approvals.jsonl`: the skill's approval line, field for field, plus `type`
   (`approval`, `rejection`, `stale`), `ts`, `via` (terminal, slash command or delivery confirmation)
   and `item_kind` (render, still, plan row). Lines are only ever appended.
 - `<project>/reports/time.md`: the time report.
+- `<project>/reports/rounds.md`: each moment's versions side by side (`aem rounds`), derived, rebuilt each time.
+- `<project>/reviews/<moment>/<version>/`: evidence (`evidence.md`, poses, phone crops, `strip.jpg`,
+  `sync.json`, `facts.json`, `holds.json`, `sheet.jpg`, `retell.md`); the critic and the sound-off
+  reader write `critic.json` and `retell.json` beside it.
 - `<project>/reviews/<client>/`: imported review comments and drafts.
 - The client's decisions file: only through `aem client-said`, verbatim, marked with who typed it.
 - The client's `critic/labelled-cases.jsonl`: only through `--label` on an approval or rejection

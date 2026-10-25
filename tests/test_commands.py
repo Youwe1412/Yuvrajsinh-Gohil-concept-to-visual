@@ -280,6 +280,17 @@ class Drift(WorldCase):
         self.assertEqual(code, 1)
         self.assertEqual([f["rule_id"] for f in d["findings"] if f["check"] == "rule-ids"], ["M-99"])
 
+    def test_ids_the_skill_defines_itself_are_not_drift(self):
+        """mergetomaster-studio v3 (23 Oct 2026) defines the operator's standing direction as headings in its own
+        references (`### O-15 · …`) and cites them elsewhere; only an ID defined nowhere is drift."""
+        for root in (self.w.ds / "Skill" / "acme-studio", self.w.skills / "acme-studio"):
+            (root / "references").mkdir(parents=True, exist_ok=True)
+            (root / "references" / "operator-direction.md").write_text(
+                "# The operator's direction\n\n### O-15 · No field behind words on footage\n\nBends a house rule.\n")
+            (root / "SKILL.md").write_text((root / "SKILL.md").read_text() + "Apply O-15. Not O-16.\n")
+        code, d = self.run_drift()
+        self.assertEqual([f["rule_id"] for f in d["findings"] if f["check"] == "rule-ids"], ["O-16"])
+
 
 class Doctor(WorldCase):
     def doctor(self, versions):
@@ -319,7 +330,7 @@ class NewClient(WorldCase):
         code, d = self.w.run("new-client", "beta", "--name", "Beta Academy", "--design-system", str(ds),
                              "--projects-root", str(self.w.tmp / "Beta"), "--contact", "Bo", "--registry", str(self.w.registry))
         self.assertEqual(code, 0, d)
-        for f in ("README.md", "rules.md", "beta-decisions.md", "text/README.md", "critic/labelled-cases.jsonl"):
+        for f in ("README.md", "rules.md", "craft-baseline.md", "beta-decisions.md", "text/README.md", "critic/labelled-cases.jsonl"):
             self.assertTrue((ds / f).exists(), f)
         self.assertNotIn("{{", (ds / "beta-decisions.md").read_text())
         hdr = json.loads((ds / "critic" / "labelled-cases.jsonl").read_text().splitlines()[0])
@@ -368,6 +379,7 @@ class JsonEverywhere(WorldCase):
             ("status",), ("stage", "start", "G1"), ("report", "--no-write"),
             ("approve", "a", "renders/a.mp4", "--gate", "G4"), ("reject", "a", "--reason", "r"),
             ("recall",), ("integrity",), ("check-approval", "renders/a.mp4"), ("drift", "--skills-dir", str(self.w.skills)),
+            ("chose", "x", "--why", "y"), ("rounds", "--no-write"),
         ]
         for c in cmds:
             code, d = self.w.run(*c)

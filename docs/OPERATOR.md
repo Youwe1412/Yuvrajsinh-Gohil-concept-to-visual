@@ -75,8 +75,16 @@ are the readable poses (each cue word's frame, the first and the last) as 1920-w
 390-wide phone crops, an 8-frame strip around the fastest transition, `sync.json`, `facts.json` and
 `evidence.md`, which names every image and is all a critic subagent needs. It only informs: nothing
 waits on it and nothing is refused because of it. On P1's 59 masters it took 1.4 s per render (median),
-about 2.4 s per 10 s of 4K scene. `aem evidence --video <cut>` makes one contact sheet per moment from
+about 2.4 s per 10 s of 4K scene, before the sound-off sheet added about a quarter more. `aem evidence --video <cut>` makes one contact sheet per moment from
 the assembled cut (P1's 11-minute film: 58 sheets in 8 s).
+
+**Judging, not only checking.** Evidence also lists frozen holds (`holds.json`) and makes a silent 2 fps
+sheet with `retell.md`: give a fresh subagent that file alone and it retells the moment with the sound
+off; the critic then says whether that matches what the viewer should know after (`retell_match`). Put a
+few reference stills in the project's `references/` and evidence links them for a director's review
+("what looks assembled, slow or generic beside these?"). After each repair, `aem rounds` shows what each
+version fixed, kept or brought back. The agent logs its own decisions with `aem chose`; at the client's
+review, `aem calibrate` says how many of the changed moments rested on one of ours.
 
 **The client's review.** Joel reviews the finished video on Frame.io and never sees the process, so
 wait for his review. Export his comments as CSV and run `aem import-review <csv>`: each comment is
@@ -88,6 +96,9 @@ to work ("do whatever you think is appropriate") is `--about channel`.
 
 **Acceptance.** When Joel accepts the whole video, `/accept-video <version> <where it came from>` writes
 an implicit acceptance for every moment he did not comment on, with the delivered render's SHA-256.
+When the moments went out at different versions (P2: v01 to v06), use
+`/accept-video latest --before "Done/P2 - Claude Code Done.mov" WhatsApp, 19 Oct 2026`: each moment's
+newest render made before the delivered master.
 Silence counts only then, and never as an explicit ruling. Don't ask him to rule on individual
 animations unless he offers. Running it again for the same version writes nothing new.
 

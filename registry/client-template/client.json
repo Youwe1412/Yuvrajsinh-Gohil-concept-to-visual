@@ -72,6 +72,26 @@
     ]
   },
   "idle_minutes": 10,
+  "audio": {
+    "summary": "{{CLIENT_NAME}}'s sound policy, read by the client's studio skill and checked with earshot. aem does not read it. Fill each value from the client's rules and name the rule in sources; null means not decided yet, so ask.",
+    "libraries": [],
+    "libraries_first": true,
+    "cue_kinds": [],
+    "music": {
+      "library": null,
+      "vocals_under_speech": null,
+      "beds_per_segment": null
+    },
+    "loudness": {
+      "master_lufs_integrated": null,
+      "true_peak_dbtp": null,
+      "dialogue_lufs_short_term": null,
+      "music_under_dialogue_db": null
+    },
+    "generated_sfx": "pending",
+    "llm_upload": false,
+    "sources": {}
+  },
   "moments": {
     "plan_files": [
       "visual-plan.md"
@@ -112,7 +132,23 @@
     "summary": "How {{CONTACT}} reviews: what they see (the finished video or each animation), where approval, timestamped notes and other feedback arrive, and whether they see the process."
   },
   "evidence": {
-    "rules": {},
-    "max_per_command": 6
+    "rules": {
+      "holds": [
+        "A-09"
+      ],
+      "sync": [
+        "A-21"
+      ],
+      "phone": [
+        "A-22"
+      ]
+    },
+    "max_per_command": 6,
+    "max_still_s": 0.5,
+    "max_frozen_per_30s": 1.0,
+    "references": [
+      "references/*.png",
+      "references/*.jpg"
+    ]
   }
 }

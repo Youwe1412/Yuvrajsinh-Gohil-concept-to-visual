@@ -9,7 +9,12 @@ For one render (the sentinel runs it after every render), under reviews/<moment>
   sync.json         per cue word: the word's onset frame, the frame the picture starts to change, the frame the
                     readable pose settles, and the offset in frames (settle - onset)
   facts.json        the render check: spec, frame count, flashes, SHA-256 (what the sentinel reported)
-  evidence.md       all of the above with relative image paths, the moment's contract and the rule IDs that apply
+  holds.json        every run of frozen frames (the picture repeats with no micro-motion), its length and where it
+                    sits, and frozen seconds per 30 s, against the client's thresholds
+  sheet.jpg         the render at 2 frames a second, tiled, with no sound and no words: the sound-off read
+  retell.md         the only file a sound-off reader is given: sheet.jpg and what to write (retell.json)
+  evidence.md       all of the above with relative image paths, the moment's contract, the rule IDs that apply and,
+                    when the project has them, reference frames for the director's review
 
 Cue words come from --cue-at (seconds into the scene, for hand-measured onsets), --cue (word IDs), the shot list's
 cue column, or, when none is written, from motion: each movement is paired with the moment's word nearest its start.
@@ -42,12 +47,23 @@ CUE_WINDOW_S = 0.6        # a movement this close to a cue word answers it
 POSE_W, PHONE_W, STRIP_W = 1920, 390, 480
 MAX_POSES = 16
 SHEET_FRAMES = 6
+FROZEN = 0.03             # mean grey-level change per pixel under which a frame repeats the last: frozen, not breathing
+MAX_STILL_S = 0.5         # a frozen run longer than this is listed for the critic
+MAX_FROZEN_PER_30S = 1.0  # frozen seconds per 30 s above this are listed for the critic
+SOUND_OFF_FPS = 2
+SOUND_OFF_MAX = 24
+SOUND_OFF_COLS = 6
+SOUND_OFF_W = 320
+REFERENCES = ["references/*.png", "references/*.jpg"]
+MAX_REFERENCES = 6
 
 DEFAULT_RULES = {}  # which rule IDs evidence speaks to is the client's; see the registry's evidence.rules
 
 
 def settings(ctx: Context) -> dict:
-    cfg = {"max_per_command": 6, "rules": dict(DEFAULT_RULES), "quiet": QUIET, "hold_s": HOLD_S}
+    cfg = {"max_per_command": 6, "rules": dict(DEFAULT_RULES), "quiet": QUIET, "hold_s": HOLD_S,
+           "frozen": FROZEN, "max_still_s": MAX_STILL_S, "max_frozen_per_30s": MAX_FROZEN_PER_30S,
+           "references": list(REFERENCES)}
     cfg.update(ctx.client.raw.get("evidence") or {})
     cfg.update(ctx.project_settings().get("evidence") or {})
     return cfg
@@ -183,6 +199,79 @@ def _strip(path: Path, first: int, outdir: Path, n: int) -> str | None:
     return "strip.jpg" if p.returncode == 0 and dst.exists() else None
 
 
+def holds(d: list[float], fps: Fraction, *, frozen: float, max_still_s: float, max_per_30s: float) -> dict:
+    """Runs of frozen frames: each frame of a run repeats the one before it (change under `frozen`). A run of
+    frames i..j holds the picture of frame i-1 from i-1 to j. A readable pose may still be frozen; whether a hold
+    must breathe is the client's rule, so nothing here fails: the runs are listed for the critic."""
+    n, rate = len(d), float(fps)
+    runs, i = [], 1
+    while i < n:
+        if d[i] < frozen:
+            j = i
+            while j + 1 < n and d[j + 1] < frozen:
+                j += 1
+            first, last = i - 1, j
+            where = "whole render" if first == 0 and last == n - 1 else "start" if first == 0 else \
+                "end" if last == n - 1 else "middle"
+            runs.append({"first": first, "last": last, "frames": last - first + 1,
+                         "seconds": round((last - first + 1) / rate, 3), "where": where})
+            i = j + 1
+        else:
+            i += 1
+    frozen_s = sum(r["frames"] - 1 for r in runs) / rate if rate else 0.0
+    duration = n / rate if rate else 0.0
+    per_30 = frozen_s / duration * 30 if duration else 0.0
+    long_runs = [r for r in runs if r["seconds"] > max_still_s]
+    return {"frozen_threshold": frozen, "max_still_s": max_still_s, "max_frozen_per_30s": max_per_30s,
+            "duration_s": round(duration, 3), "frozen_s": round(frozen_s, 3), "frozen_per_30s": round(per_30, 3),
+            "longest_s": max((r["seconds"] for r in runs), default=0.0), "runs": runs,
+            "over": long_runs, "per_30s_over": per_30 > max_per_30s}
+
+
+def sound_off_sheet(path: Path, n: int, fps: Fraction, outdir: Path) -> dict | None:
+    """sheet.jpg: the render at SOUND_OFF_FPS (fewer when it is long), tiled left to right, top to bottom."""
+    dur = n / float(fps) if fps else 0
+    if n < 2 or dur <= 0:
+        return None
+    count = max(1, min(SOUND_OFF_MAX, int(dur * SOUND_OFF_FPS + 0.999)))
+    rate = count / dur
+    rows = (count + SOUND_OFF_COLS - 1) // SOUND_OFF_COLS
+    cols = min(SOUND_OFF_COLS, count)
+    dst = outdir / "sheet.jpg"
+    p = subprocess.run([_ffmpeg(), "-v", "error", "-y", "-i", str(path), "-an", "-vf",
+                        f"fps={rate:.6f},scale={SOUND_OFF_W}:-2,tile={cols}x{rows}",
+                        "-frames:v", "1", "-q:v", "4", str(dst)], capture_output=True)
+    if p.returncode != 0 or not dst.exists():
+        return None
+    return {"image": "sheet.jpg", "frames": count, "every_s": round(1 / rate, 3), "cols": cols, "rows": rows}
+
+
+def references(ctx: Context, cfg: dict, outdir: Path) -> tuple[list[str], list[str]]:
+    """Reference frames for the director's review, as paths relative to outdir, and the patterns looked at."""
+    import os
+    pats = cfg.get("references") or []
+    pats = [pats] if isinstance(pats, str) else list(pats)
+    found: list[Path] = []
+    for pat in pats:
+        found += [f for f in sorted(ctx.project_dir.glob(pat)) if f.is_file() and f not in found]
+    return [os.path.relpath(f, outdir) for f in found[:MAX_REFERENCES]], pats
+
+
+def retell_markdown(mid: str, version: str, sheet: dict) -> str:
+    return "\n".join([
+        f"# Sound-off read · {mid} · {version}", "",
+        f"[sheet.jpg](sheet.jpg) is a short piece of film: {sheet['frames']} frames, one every {sheet['every_s']:g} s, "
+        "left to right, then top to bottom. There is no sound and no narration.", "",
+        "Open sheet.jpg and nothing else: not the other files in this folder, not the plan, not the source.", "",
+        "Then write `retell.json` beside this file:", "",
+        "```json",
+        '{"retell": "<two sentences: what happens, and what a viewer now knows that they did not before>",',
+        ' "unclear": "<what you could not follow, or null>"}',
+        "```", "",
+        "Say what you see, not what it is probably meant to show. If you cannot tell what it teaches, say so: that is "
+        "the finding.", ""])
+
+
 def _facts(ctx: Context, path: Path, given: dict | None) -> dict:
     if given and given.get("checks"):
         return given
@@ -197,7 +286,9 @@ def _rules(ctx: Context, m: dict | None) -> list[tuple[str, str]]:
     cfg = settings(ctx)["rules"]
     out = []
     names = {"sync": "sync.json and the poses", "phone": "phone/*.png", "flash": "strip.jpg and facts.json flashes",
-             "motion": "strip.jpg", "contract": "the contract above and the poses", "critic": "how findings are reported"}
+             "motion": "strip.jpg", "contract": "the contract above and the poses", "critic": "how findings are reported",
+             "holds": "holds.json and Holds and freezes", "sound_off": "sheet.jpg and the sound-off retell",
+             "references": "the poses beside the reference frames"}
     for key, ids in cfg.items():
         for rid in ids if isinstance(ids, list) else [ids]:
             out.append((rid, names.get(key, key)))
@@ -251,6 +342,17 @@ def build(ctx: Context, render_path: str, *, facts: dict | None = None, moment: 
     first = min(max(peak - 3, 0), max(n - width, 0))
     strip = _strip(path, first, outdir, width) if n else None
 
+    hd = holds(d, rate, frozen=float(cfg.get("frozen", FROZEN)), max_still_s=float(cfg.get("max_still_s", MAX_STILL_S)),
+               max_per_30s=float(cfg.get("max_frozen_per_30s", MAX_FROZEN_PER_30S)))
+    hold_rule = (cfg.get("rules") or {}).get("holds")
+    hd["rule"] = ", ".join(hold_rule) if isinstance(hold_rule, list) else hold_rule
+    write_json_atomic(outdir / "holds.json", {"render": rel_to(path, ctx.project_dir), "moment": mid, "version": version,
+                                               "fps": fpsmod.rate_str(rate), "frames": n, **hd})
+    sheet = sound_off_sheet(path, n, rate, outdir)
+    if sheet:
+        (outdir / "retell.md").write_text(retell_markdown(mid, version, sheet), encoding="utf-8")
+    refs, ref_pats = references(ctx, cfg, outdir)
+
     offsets = [abs(c["offset_frames"]) for c in s if c["offset_frames"] is not None]
     measured = bool(s) and not cue_src.startswith("inferred")  # real cue words, not movements paired with words
     flashes = [f for f in fct.get("flashes") or [] if f.get("severity") == "fail"]
@@ -260,7 +362,8 @@ def build(ctx: Context, render_path: str, *, facts: dict | None = None, moment: 
                 "max_abs_offset_frames": max(offsets) if offsets else None}
     write_json_atomic(outdir / "sync.json", sync_doc)
     write_json_atomic(outdir / "facts.json", strip_private(fct))
-    md = markdown(ctx, path, mid, m, version, sha, rate, n, fct, s, cue_src, poses, images, strip, first, width, peak, d)
+    md = markdown(ctx, path, mid, m, version, sha, rate, n, fct, s, cue_src, poses, images, strip, first, width, peak, d,
+                  hd=hd, sheet=sheet, refs=refs, ref_pats=ref_pats)
     (outdir / "evidence.md").write_text(md, encoding="utf-8")
     seconds = round(time.monotonic() - t0, 2)
     toast = (f"evidence ready: {mid} {version}, "
@@ -270,6 +373,8 @@ def build(ctx: Context, render_path: str, *, facts: dict | None = None, moment: 
               "evidence_md": rel_to(outdir / "evidence.md", ctx.project_dir), "poses": len(images), "strip": bool(strip),
               "max_abs_offset_frames": sync_doc["max_abs_offset_frames"] if measured else None,
               "sync_measured": measured, "flashes": len(flashes), "seconds": seconds,
+              "frozen_over": len(hd["over"]), "frozen_per_30s": hd["frozen_per_30s"],
+              "sound_off": bool(sheet), "references": len(refs),
               "frames": n, "toast": toast, "render_sha256": sha}
     if record:
         ledger.record(ctx, "evidence", scene=mid, note=toast, render=rel_to(path, ctx.project_dir), render_sha256=sha,
@@ -281,7 +386,9 @@ def _clip(text: str | None) -> str:
     return (text or "").strip() or "not written in the plan"
 
 
-def markdown(ctx, path, mid, m, version, sha, rate, n, fct, s, cue_src, poses, images, strip, first, width, peak, d) -> str:
+def markdown(ctx, path, mid, m, version, sha, rate, n, fct, s, cue_src, poses, images, strip, first, width, peak, d,
+             *, hd: dict | None = None, sheet: dict | None = None, refs: list[str] | None = None,
+             ref_pats: list[str] | None = None) -> str:
     c = (m or {}).get("contract") or {}
     asked = (m or {}).get("asked")
     notes = (m or {}).get("notes") or []
@@ -347,10 +454,46 @@ def markdown(ctx, path, mid, m, version, sha, rate, n, fct, s, cue_src, poses, i
                  f"{f['length']} frame(s), {f['area_pct']}% of the frame, {f['plane']}")
     if not flashes:
         L.append("- no one- or two-frame flash found (the first and last frame cannot be scanned)")
+    if hd is not None:
+        L += ["", "## Holds and freezes ([holds.json](holds.json))", "",
+              f"A frame is frozen when it repeats the one before it (under {hd['frozen_threshold']:g} grey levels per "
+              "pixel at 160x90): the picture holds with no micro-motion. A readable pose can be frozen; whether a hold "
+              "must breathe is the client's call" + (f" ({hd['rule']})." if hd.get("rule") else "."), "",
+              f"- Frozen {hd['frozen_s']:g} s of {hd['duration_s']:g} s: {hd['frozen_per_30s']:g} s per 30 s"
+              f" (listed above {hd['max_frozen_per_30s']:g})" + (" · **over**" if hd["per_30s_over"] else "")]
+        if hd["over"]:
+            for r_ in hd["over"]:
+                L.append(f"- Frozen {r_['seconds']:g} s, frames {r_['first']}–{r_['last']} ({r_['where']}), longer than "
+                         f"{hd['max_still_s']:g} s")
+        else:
+            L.append(f"- No frozen run longer than {hd['max_still_s']:g} s (longest {hd['longest_s']:g} s)")
+    L += ["", "## Sound-off read", ""]
+    if sheet:
+        L += ["Before you judge anything else, a reader who has seen nothing else retells the film from "
+              "[sheet.jpg](sheet.jpg) alone: give a fresh subagent [retell.md](retell.md) and nothing more; it writes "
+              "`retell.json` here. If you have already read this file, you cannot be that reader.", "",
+              "Then compare its retell with **Knows after** above: `yes` (a viewer gets it with the sound off), `partly`, "
+              "or `no`; with no knows-after in the plan, `no target`. A `no` is the most important finding a render can "
+              "have: the teaching job failed whatever else passed."]
+    else:
+        L.append("No sheet: the render is too short or could not be read.")
+    L += ["", "## Beside the references", ""]
+    if refs:
+        L += ["Reference frames for this project, the work this should hold up beside:", ""]
+        L += [f"- [{r_}]({r_})" for r_ in refs]
+        L += ["", "Put the poses beside them and ask one question: what here looks assembled, slow or generic next to "
+              "them? At most three, each naming a pose image and the reference image. This is advice to the director: "
+              "it does not change the verdict."]
+    else:
+        L.append(f"No reference frames found ({', '.join(ref_pats or []) or 'no pattern set'}, under the project; "
+                 "`evidence.references` in aem.project.json or the registry): skip this review and say so.")
     L += ["", "## How to report", "",
           "Write `critic.json` beside this file: `{\"verdict\": \"flag\" or \"pass\", \"findings\": [{\"rule\": \"<rule ID>\", "
-          "\"image\": \"<path above>\", \"note\": \"<what is wrong, what the viewer would get instead>\"}]}`. At most the "
-          "three worst findings. A finding with no image or no rule ID is not a finding.", ""]
+          "\"image\": \"<path above>\", \"note\": \"<what is wrong, what the viewer would get instead>\"}], "
+          "\"retell_match\": \"yes\" | \"partly\" | \"no\" | \"no target\" | null, "
+          "\"director\": [{\"image\": \"<pose>\", \"reference\": \"<reference>\", \"note\": \"<what looks weaker>\"}] or null}`. "
+          "At most the three worst findings. A finding with no image or no rule ID is not a finding. On a re-render, "
+          "check every finding of the earlier versions again (`aem rounds` lists them) and say which are fixed.", ""]
     return "\n".join(L)
 
 

@@ -81,13 +81,15 @@ def calibrate(client: Client, reg_path: str | None = None) -> dict:
         index = momentsmod.read_index(ctx) or momentsmod.build(ctx)
         cases = momentsmod.video_cases(ctx)
         ms = [m for m in index.get("moments") or [] if m.get("treatment") != "nothing"]
+        chosen = momentsmod.choice_events(ctx)  # read fresh: a cached index may predate the latest choices
         rows = []
         for m in ms:
             mine = [c for c in cases if c.get("moment") == m["id"]
                     or momentsmod._matches(momentsmod.item_of(Path(str(c.get("moment") or c.get("shot") or ""))), m)]
             r = momentsmod.ruling_of(mine, op)
             crit = next((x for x in reversed(m.get("critic") or [])), None)
-            rows.append({"moment": m, "ruling": r, "cases": mine, "critic": crit})
+            rows.append({"moment": m, "ruling": r, "cases": mine, "critic": crit,
+                         "choices": momentsmod.choices_of(chosen, m)})
         for c in cases:
             all_cases.append((ctx.project, c))
         videos.append({"project": ctx.project, "direction": index.get("direction"), "notes": index.get("notes"),
@@ -160,6 +162,13 @@ def calibrate(client: Client, reg_path: str | None = None) -> dict:
                      + (f" · video-level remarks {len(v['video_level'])}" if v["video_level"] else ""))
         a, d = asked.get("asked", [0, 0]), asked.get("added", [0, 0])
         lines.append(f"    {d[0]} of {d[1]} additions changed, {a[0]} of {a[1]} asked{tag}")
+        on_choice = [r for r in changed if r["choices"]]
+        logged = sum(1 for r in rows if r["choices"])
+        vdoc["changed_on_our_choice"] = len(on_choice)
+        vdoc["moments_with_choices"] = logged
+        if logged:
+            lines.append(f"    {len(on_choice)} of {len(changed)} changed moment(s) rest on a choice of ours (aem chose); "
+                         f"{logged} of {delivered} moments carry one{tag}")
         lines.append("    by treatment: " + " · ".join(f"{k} {x[0]} of {x[1]}" for k, x in sorted(treat.items())))
         lines.append("    by job: " + " · ".join(f"{k} {x[0]} of {x[1]}" for k, x in sorted(job.items())))
 
