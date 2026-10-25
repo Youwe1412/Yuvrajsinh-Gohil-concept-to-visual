@@ -1,7 +1,7 @@
 # Aavkar Educational Motion Studio
 
-> **P2 delivered, accepted and paid, 23 Oct 2026.** The final Claude Code video:
-> **[f.io/dBF09OXt](https://f.io/dBF09OXt)** (Frame.io, `P2 - Claude Code Done.mov`, 3840×2160, 25 fps, 11:06).
+> **P2 delivered, accepted and paid, 23 Oct 2026; published on MergeToMaster, 24 Oct 2026.** The final Claude Code video:
+> **[I Used Claude Code Every Day for a Year. Here’s What I Learnt](https://www.youtube.com/watch?v=-daz-uPJ53Q)** (YouTube, 11:06). Delivered on Frame.io as `P2 - Claude Code Done.mov`, 3840×2160, 25 fps: [f.io/dBF09OXt](https://f.io/dBF09OXt).
 > Joel's review, 19 Oct 2026, on WhatsApp: "Hi, no I think its all ready to go :) happy for you to send me the invoice".
 > No change requests and no comments on the Frame.io share page; on 17 Oct: "the intro is absolutely awesome".
 > Paid on 23 Oct 2026: GBP 220.08 from Joel Belton (Infinity receipt). Proof, hashes and

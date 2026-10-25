@@ -1,13 +1,22 @@
 # P2 delivery, Joel's review and payment · Claude Code video · MergeToMaster
 
-Delivered 15 Oct 2026 · accepted with no changes 19 Oct · paid 23 Oct (GBP 220.08).
+Delivered 15 Oct 2026 · accepted with no changes 19 Oct · paid 23 Oct (GBP 220.08) · published on YouTube 24 Oct.
 
 Written 23 Oct 2026. Every figure is marked **measured** (read by a tool from a file or a page) or
 **reconstructed** (read or counted by hand).
 
 ## The final video
 
-**[Watch P2 on Frame.io: https://f.io/dBF09OXt](https://f.io/dBF09OXt)**
+**[Watch P2 on YouTube: I Used Claude Code Every Day for a Year. Here’s What I Learnt](https://www.youtube.com/watch?v=-daz-uPJ53Q)**
+
+| Field | Value | How it was read |
+|---|---|---|
+| Link | `https://www.youtube.com/watch?v=-daz-uPJ53Q` | as given by Yuvraj, 25 Oct 2026 |
+| Title and channel | "I Used Claude Code Every Day for a Year. Here’s What I Learnt", MergeToMaster | YouTube oEmbed, 25 Oct 2026, measured |
+| Published | 24 Oct 2026, 07:04 PDT (19:34 IST) | the watch page's `publishDate`, 25 Oct 2026, measured |
+| Length on YouTube | 666 s, against the master's 666.36 s | the watch page's `lengthSeconds`, measured |
+
+### Delivered on Frame.io, 15 Oct 2026
 
 | Field | Value | How it was read |
 |---|---|---|
